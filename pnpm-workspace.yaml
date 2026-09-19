@@ -1,0 +1,6 @@
+onlyBuiltDependencies:
+  - electron
+  - node-pty
+allowBuilds:
+  electron: true
+  node-pty: true
