@@ -1,4 +1,5 @@
 const path = require('node:path')
+const { validateControlPath } = require('./ssh-core.cjs')
 
 function validateRemotePath(value, { allowEmpty = false } = {}) {
   if (allowEmpty && (value === undefined || value === null || value === '')) return ''
@@ -31,9 +32,7 @@ function appendSftpConnectionArgs(args, connection) {
 }
 
 function buildSftpArgs(connection, controlPath, { batch = true } = {}) {
-  if (typeof controlPath !== 'string' || !path.isAbsolute(controlPath) || /[\r\n\0]/.test(controlPath)) {
-    throw new Error('Ruta de multiplexación inválida.')
-  }
+  validateControlPath(controlPath)
   const args = [
     '-o', 'BatchMode=yes',
     '-o', 'ConnectTimeout=5',

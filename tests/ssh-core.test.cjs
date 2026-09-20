@@ -11,6 +11,7 @@ const {
   parseTelemetrySample,
   readHostAliases,
   validateConnection,
+  validateControlPath,
   validateResize,
   validateTerminalInput,
 } = require('../electron/ssh-core.cjs')
@@ -103,6 +104,20 @@ test('adds a shared control socket to interactive SSH without changing the desti
   assert.ok(args.includes('/tmp/conexum-control'))
   assert.ok(args.includes('ControlMaster=auto'))
   assert.ok(args.includes('ControlPersist=60'))
+})
+
+test('rejects control socket paths that leave no room for the OpenSSH temporary suffix', () => {
+  const shortPath = '/tmp/cx-a1b2c3/1234567890abcdef'
+  assert.equal(validateControlPath(shortPath), shortPath)
+  assert.throws(() => validateControlPath(`/tmp/${'a'.repeat(80)}`), /demasiado larga/i)
+  assert.throws(() => buildSshArgs({
+    host: 'example.com',
+    port: 22,
+    username: 'deploy',
+    identityFile: '',
+    configFile: '',
+    sshAlias: '',
+  }, { controlPath: `/tmp/${'a'.repeat(80)}` }), /demasiado larga/i)
 })
 
 test('builds read-only telemetry arguments over the existing control socket', () => {
