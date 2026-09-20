@@ -3,7 +3,7 @@ const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
 const crypto = require('node:crypto')
-const { execFile, execFileSync } = require('node:child_process')
+const { execFile, execFileSync, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
 const pty = require('node-pty')
 const {
@@ -21,18 +21,198 @@ const {
   validateResize,
   validateTerminalInput,
 } = require('./ssh-core.cjs')
+const {
+  TransferQueue,
+  buildListBatch,
+  buildMutationBatch,
+  buildSftpArgs,
+  buildTransferCommand,
+  parseSftpListing,
+  validateRemotePath,
+} = require('./sftp-core.cjs')
 
 app.setName('Conexum')
 
 const sessions = new SessionRegistry()
 const sessionConnections = new Map()
 const telemetryCache = new Map()
+const transferJobs = new Map()
+const transferSnapshots = new Map()
+const localFileGrants = new Map()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
 const controlDirectory = path.join(os.tmpdir(), `conexum-ssh-${typeof process.getuid === 'function' ? process.getuid() : 'user'}`)
 const execFileAsync = promisify(execFile)
 
 fs.mkdirSync(controlDirectory, { recursive: true, mode: 0o700 })
 fs.chmodSync(controlDirectory, 0o700)
+
+function sendToRenderer(sender, channel, payload) {
+  if (!sender.isDestroyed()) sender.send(channel, payload)
+}
+
+function publishTransfer(job, update) {
+  const snapshot = {
+    transferId: job.id,
+    sessionId: job.sessionId,
+    direction: job.direction,
+    name: job.name,
+    progress: update.progress ?? job.progress,
+    status: update.status,
+    error: update.error,
+    updatedAt: Date.now(),
+  }
+  transferSnapshots.set(job.id, snapshot)
+  if (transferSnapshots.size > 100) {
+    const oldest = [...transferSnapshots.values()].sort((left, right) => left.updatedAt - right.updatedAt)[0]
+    if (oldest) transferSnapshots.delete(oldest.transferId)
+  }
+  sendToRenderer(job.sender, 'sftp:transfer-progress', snapshot)
+}
+
+function sessionContext(sessionId) {
+  if (!isValidSessionId(sessionId)) throw new Error('Identificador de sesión inválido.')
+  const context = sessionConnections.get(sessionId)
+  if (!context || !sessions.has(sessionId)) throw new Error('La sesión SSH ya no está activa.')
+  return context
+}
+
+function validateLocalPath(localPath, mode) {
+  if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || localPath.length > 4_096 || /[\r\n\0]/.test(localPath)) {
+    throw new Error('La ruta local no es válida.')
+  }
+  const grant = localFileGrants.get(localPath)
+  if (!grant || grant.mode !== mode || grant.expiresAt < Date.now()) throw new Error('Volvé a seleccionar el archivo local.')
+  if (mode === 'upload' && !fs.statSync(localPath).isFile()) throw new Error('El archivo local no es válido.')
+  if (mode === 'download' && !fs.existsSync(path.dirname(localPath))) throw new Error('La carpeta local no existe.')
+  return localPath
+}
+
+function grantLocalPath(localPath, mode) {
+  for (const [grantedPath, grant] of localFileGrants) {
+    if (grant.expiresAt < Date.now()) localFileGrants.delete(grantedPath)
+  }
+  localFileGrants.set(localPath, { mode, expiresAt: Date.now() + 10 * 60_000 })
+  return localPath
+}
+
+function runSftpBatch(context, batch) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('/usr/bin/sftp', buildSftpArgs(context.connection, context.controlPath), {
+      cwd: os.homedir(),
+      env: { ...processEnvForSsh(), LC_ALL: 'C' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    const timer = setTimeout(() => child.kill('SIGTERM'), 10_000)
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8')
+      if (stdout.length > 4_000_000) child.kill('SIGTERM')
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8')
+      if (stderr.length > 128_000) child.kill('SIGTERM')
+    })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) resolve(stdout)
+      else reject(new Error(stderr.trim() || 'La operación SFTP no pudo completarse.'))
+    })
+    child.stdin.end(batch)
+  })
+}
+
+function cancelSessionTransfers(sessionId) {
+  for (const [transferId, job] of transferJobs) {
+    if (job.sessionId === sessionId) transferQueue.cancel(transferId)
+  }
+}
+
+async function runTransfer(job) {
+  const context = sessionContext(job.sessionId)
+  const args = buildSftpArgs(context.connection, context.controlPath, { batch: false })
+  const command = buildTransferCommand(job.direction, job.localPath, job.remotePath)
+
+  return new Promise((resolve) => {
+    let phase = 'opening'
+    let outputBuffer = ''
+    let finished = false
+    let canceled = false
+    const process = pty.spawn('/usr/bin/sftp', args, {
+      name: 'xterm-256color',
+      cols: 120,
+      rows: 24,
+      cwd: os.homedir(),
+      env: { ...processEnvForSsh(), LC_ALL: 'C', TERM: 'xterm-256color' },
+    })
+
+    const finish = (status, error) => {
+      if (finished) return
+      finished = true
+      transferJobs.delete(job.id)
+      publishTransfer(job, {
+        progress: status === 'completed' ? 100 : job.progress,
+        status,
+        error,
+      })
+      resolve()
+    }
+
+    job.cancel = () => {
+      canceled = true
+      try { process.kill() } catch {}
+    }
+    publishTransfer(job, { progress: 0, status: 'active' })
+
+    process.onData((data) => {
+      outputBuffer = `${outputBuffer}${data.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')}`.slice(-8_192)
+      for (const match of data.matchAll(/(\d{1,3})%/g)) {
+        const progress = Math.min(100, Number(match[1]))
+        if (progress > job.progress) {
+          job.progress = progress
+          publishTransfer(job, { progress, status: 'active' })
+        }
+      }
+
+      if (/sftp>\s*$/.test(outputBuffer)) {
+        if (phase === 'opening') {
+          outputBuffer = ''
+          phase = 'transferring'
+          process.write(`${command}\r`)
+        } else if (phase === 'transferring') {
+          const transferError = /(?:^|\r?\n)(?:Couldn't|Failure|No such file|Permission denied|not found|not a regular file)/i.test(outputBuffer)
+          outputBuffer = ''
+          phase = 'closing'
+          process.write('bye\r')
+          finish(transferError ? 'error' : 'completed', transferError ? 'El servidor rechazó la transferencia.' : undefined)
+        }
+      }
+    })
+
+    process.onExit(({ exitCode }) => {
+      if (finished) return
+      if (canceled) finish('canceled')
+      else finish('error', exitCode === 0 ? 'La transferencia terminó antes de completarse.' : 'La transferencia SFTP falló.')
+    })
+  })
+}
+
+const transferQueue = new TransferQueue(async (job) => {
+  try {
+    await runTransfer(job)
+  } catch (error) {
+    transferJobs.delete(job.id)
+    publishTransfer(job, {
+      progress: job.progress,
+      status: 'error',
+      error: error instanceof Error ? error.message : 'No se pudo iniciar la transferencia.',
+    })
+  }
+})
 
 function connectionCacheKey(connection) {
   return crypto.createHash('sha256').update(JSON.stringify({
@@ -153,6 +333,104 @@ function registerProfileHandlers() {
   })
 }
 
+function registerSftpHandlers() {
+  ipcMain.handle('sftp:list', async (_event, { sessionId, remotePath } = {}) => {
+    const context = sessionContext(sessionId)
+    const validatedPath = validateRemotePath(remotePath, { allowEmpty: true })
+    const output = await runSftpBatch(context, buildListBatch(validatedPath))
+    return parseSftpListing(output, validatedPath)
+  })
+
+  ipcMain.handle('sftp:mutate', async (event, { sessionId, operation, sourcePath, destinationPath } = {}) => {
+    const context = sessionContext(sessionId)
+    const batch = buildMutationBatch(operation, sourcePath, destinationPath)
+    if (operation === 'remove-file' || operation === 'remove-directory') {
+      const parent = BrowserWindow.fromWebContents(event.sender)
+      const options = {
+        type: 'warning',
+        buttons: ['Eliminar', 'Cancelar'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Confirmar eliminación remota',
+        message: `¿Eliminar ${path.posix.basename(validateRemotePath(sourcePath))}?`,
+        detail: operation === 'remove-directory'
+          ? 'La carpeta sólo se eliminará si está vacía. Esta acción no se puede deshacer.'
+          : 'El archivo remoto se eliminará permanentemente. Esta acción no se puede deshacer.',
+      }
+      const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
+      if (result.response !== 0) return false
+    }
+    await runSftpBatch(context, batch)
+    return true
+  })
+
+  ipcMain.handle('sftp:choose-upload', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Seleccionar archivo para subir', properties: ['openFile'] })
+    if (result.canceled || !result.filePaths[0]) return null
+    const localPath = result.filePaths[0]
+    const stats = fs.statSync(localPath)
+    if (!stats.isFile()) return null
+    grantLocalPath(localPath, 'upload')
+    return { path: localPath, name: path.basename(localPath), size: stats.size }
+  })
+
+  ipcMain.handle('sftp:grant-dropped-upload', (_event, localPath) => {
+    if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || /[\r\n\0]/.test(localPath)) return null
+    const stats = fs.statSync(localPath)
+    if (!stats.isFile()) return null
+    grantLocalPath(localPath, 'upload')
+    return { path: localPath, name: path.basename(localPath), size: stats.size }
+  })
+
+  ipcMain.handle('sftp:choose-download', async (_event, suggestedName) => {
+    const safeName = typeof suggestedName === 'string' ? path.basename(suggestedName).replace(/[\r\n\0]/g, '') : 'download'
+    const result = await dialog.showSaveDialog({ title: 'Guardar archivo remoto', defaultPath: path.join(os.homedir(), 'Downloads', safeName || 'download') })
+    if (result.canceled || !result.filePath) return null
+    grantLocalPath(result.filePath, 'download')
+    return result.filePath
+  })
+
+  ipcMain.handle('sftp:transfers', (_event, { sessionId } = {}) => {
+    if (!isValidSessionId(sessionId)) return []
+    return [...transferSnapshots.values()]
+      .filter((transfer) => transfer.sessionId === sessionId)
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, 6)
+  })
+
+  ipcMain.handle('sftp:enqueue-transfer', (event, { sessionId, direction, localPath, remotePath, name } = {}) => {
+    sessionContext(sessionId)
+    if (direction !== 'upload' && direction !== 'download') throw new Error('Dirección de transferencia inválida.')
+    const validatedLocalPath = validateLocalPath(localPath, direction)
+    const validatedRemotePath = validateRemotePath(remotePath)
+    const safeName = typeof name === 'string' && name.length <= 512 && !/[\r\n\0]/.test(name) ? name : path.basename(direction === 'upload' ? validatedLocalPath : validatedRemotePath)
+    const transferId = crypto.randomUUID()
+    const job = {
+      id: transferId,
+      sessionId,
+      direction,
+      localPath: validatedLocalPath,
+      remotePath: validatedRemotePath,
+      name: safeName,
+      progress: 0,
+      sender: event.sender,
+      cancel: null,
+      onCanceled: () => {
+        transferJobs.delete(transferId)
+        publishTransfer(job, { progress: 0, status: 'canceled' })
+      },
+    }
+    transferJobs.set(transferId, job)
+    publishTransfer(job, { progress: 0, status: 'queued' })
+    transferQueue.enqueue(job)
+    return { transferId }
+  })
+
+  ipcMain.on('sftp:cancel-transfer', (_event, { transferId } = {}) => {
+    if (isValidSessionId(transferId)) transferQueue.cancel(transferId)
+  })
+}
+
 function registerSshHandlers() {
   ipcMain.handle('ssh:connect', (event, request) => {
     const connection = validateConnection(request)
@@ -187,6 +465,7 @@ function registerSshHandlers() {
     sshProcess.onExit(({ exitCode, signal }) => {
       sessions.remove(connection.sessionId)
       sessionConnections.delete(connection.sessionId)
+      cancelSessionTransfers(connection.sessionId)
       if (!sender.isDestroyed()) {
         sender.send('ssh:exit', {
           sessionId: connection.sessionId,
@@ -213,6 +492,7 @@ function registerSshHandlers() {
 
   ipcMain.on('ssh:disconnect', (_event, { sessionId } = {}) => {
     if (!isValidSessionId(sessionId)) return
+    cancelSessionTransfers(sessionId)
     sessionConnections.delete(sessionId)
     sessions.close(sessionId)
   })
@@ -226,6 +506,8 @@ function registerSshHandlers() {
 }
 
 function closeAllSessions() {
+  transferQueue.clear()
+  transferJobs.clear()
   sessionConnections.clear()
   sessions.closeAll()
 }
@@ -264,6 +546,7 @@ function createWindow() {
 
 registerSshHandlers()
 registerProfileHandlers()
+registerSftpHandlers()
 
 app.whenReady().then(() => {
   app.setAppUserModelId('com.lucashx.conexum')

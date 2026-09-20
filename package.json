@@ -2,7 +2,7 @@
   "name": "conexum",
   "productName": "Conexum",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A simple, terminal-first SSH connection manager for macOS",
   "author": "Lucas-hX",
   "homepage": "https://github.com/Lucas-hX/Conexum",

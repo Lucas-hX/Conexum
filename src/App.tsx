@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import type { CSSProperties, ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SftpPanel } from './SftpPanel'
 import {
   ChevronDown,
   Clock3,
@@ -98,10 +99,11 @@ function loadRecentConnections(): string[] {
 }
 
 const TerminalView = forwardRef<TerminalHandle, {
+  sessionId: string
   onStatusChange(status: SessionStatus): void
   onDirectoryChange(directory: string): void
   onIdentityNeeded(profile: ConnectionProfile): void
-}>(function TerminalView({ onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
+}>(function TerminalView({ sessionId, onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -206,7 +208,6 @@ const TerminalView = forwardRef<TerminalHandle, {
       terminal.writeln(`\x1b[90m[Conexum] Abriendo /usr/bin/ssh hacia ${profile.username}@${profile.host}:${profile.port}…\x1b[0m`)
       onStatusChange('connecting')
 
-      const sessionId = crypto.randomUUID()
       sessionIdRef.current = sessionId
       try {
         await window.conexum.ssh.connect({
@@ -233,7 +234,7 @@ const TerminalView = forwardRef<TerminalHandle, {
       terminal?.writeln('\r\n\x1b[90m[Conexum] Desconectado por el usuario.\x1b[0m')
       onStatusChange('disconnected')
     },
-  }), [onIdentityNeeded, onStatusChange])
+  }), [onIdentityNeeded, onStatusChange, sessionId])
 
   return <div className="terminal-host" ref={hostRef} aria-label="Terminal SSH" />
 })
@@ -258,7 +259,7 @@ function ManagedTerminalSession({ session, onHandle, onStatusChange, onDirectory
     return () => onHandle(session.id, null)
   }, [])
 
-  return <TerminalView ref={terminalRef} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
+  return <TerminalView ref={terminalRef} sessionId={session.id} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
 }
 
 function ToolButton({ label, icon, active, disabled, onClick }: {
@@ -447,6 +448,7 @@ export function App() {
     const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
     return Number.isFinite(stored) ? Math.min(Math.max(stored, 180), 420) : 270
   })
+  const [utilityPanelWidth, setUtilityPanelWidth] = useState(380)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(loadProfiles().map((profile) => profile.group)))
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
   const [query, setQuery] = useState('')
@@ -524,6 +526,10 @@ export function App() {
       window.clearInterval(timer)
     }
   }, [activeSessionId, activeSession?.status, mainView])
+
+  useEffect(() => {
+    if (activeTool && activeSession?.status !== 'connected') setActiveTool(null)
+  }, [activeSession?.status, activeTool])
 
   const openNewProfile = () => {
     setEditingProfile(null)
@@ -668,6 +674,19 @@ export function App() {
     window.addEventListener('pointerup', stop)
   }
 
+  const startUtilityResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = utilityPanelWidth
+    const move = (moveEvent: PointerEvent) => setUtilityPanelWidth(Math.min(Math.max(startWidth + startX - moveEvent.clientX, 300), 620))
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+
   const toggleTool = (tool: Exclude<ToolPanel, null>) => {
     setActiveTool((current) => current === tool ? null : tool)
   }
@@ -691,7 +710,7 @@ export function App() {
             onClick={connectOrDisconnect}
           />
           <ToolButton icon={<Columns2 size={16} />} label="Dividir" disabled />
-          <ToolButton icon={<FolderOpen size={16} />} label="SFTP" active={activeTool === 'sftp'} disabled={!activeSession} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
+          <ToolButton icon={<FolderOpen size={16} />} label="SFTP" active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected'} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
           <ToolButton icon={<FileCode2 size={16} />} label="Editor" active={activeTool === 'editor'} disabled={!activeSession} onClick={() => { setMainView('terminal'); toggleTool('editor') }} />
           <button className="icon-button" aria-label="Ajustes"><Settings2 size={17} /></button>
         </nav>
@@ -746,7 +765,7 @@ export function App() {
             <div className="tab-spacer" />
           </div>
 
-          <div className={`content-row ${activeTool && mainView === 'terminal' ? 'panel-open' : ''}`}>
+          <div className={`content-row ${activeTool && mainView === 'terminal' ? 'panel-open' : ''}`} style={{ '--utility-width': `${utilityPanelWidth}px` } as CSSProperties}>
             <div className="primary-view">
               <div className={`home-layer ${mainView === 'home' ? 'visible' : ''}`}>
                 <WelcomeHome profiles={profiles} recentIds={recentIds} selectedId={selectedId} onSelect={(profile) => setSelectedId(profile.id)} onConnect={openSession} onNew={openNewProfile} onImport={importSshConfig} />
@@ -757,11 +776,9 @@ export function App() {
                 </div>
               ))}
             </div>
-            {mainView === 'terminal' && activeTool === 'sftp' && (
-              <aside className="utility-panel">
-                <div className="panel-heading"><div><small>SFTP — PRÓXIMA ETAPA</small><strong>{activeSession?.profile.name}</strong></div><button className="icon-button" onClick={() => setActiveTool(null)}><X size={17} /></button></div>
-                <div className="panel-message"><FolderOpen size={32} /><strong>Archivos remotos</strong><p>Este panel reutilizará el comando SFTP de macOS y la misma configuración SSH.</p></div>
-              </aside>
+            {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(380)} />}
+            {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
+              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={activeSession.currentDirectory} onClose={() => setActiveTool(null)} />
             )}
             {mainView === 'terminal' && activeTool === 'editor' && (
               <aside className="utility-panel editor-panel">
