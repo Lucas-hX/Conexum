@@ -2,7 +2,7 @@
   "name": "conexum",
   "productName": "Conexum",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "A simple, terminal-first SSH connection manager for macOS",
   "author": "Lucas-hX",
   "homepage": "https://github.com/Lucas-hX/Conexum",
@@ -20,7 +20,8 @@
     "preview": "vite preview",
     "desktop": "tsc -b && vite build && electron .",
     "rebuild:native": "electron-rebuild -f -w node-pty",
-    "package:mac": "pnpm run build && electron-builder --mac dir"
+    "package:mac": "pnpm run build && electron-builder --mac dir",
+    "update:local": "./scripts/update-conexum.command"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

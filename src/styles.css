@@ -978,6 +978,35 @@ button {
   gap: 10px;
 }
 
+.status-left {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.status-right {
+  flex: 0 0 auto;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+}
+
+.status-right.stale {
+  color: #6f7b85;
+}
+
+.session-directory {
+  max-width: min(36vw, 420px);
+  overflow: hidden;
+  padding-left: 2px;
+  color: #b8c4ce;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-directory.unavailable {
+  color: #677580;
+}
+
 .divider {
   width: 1px;
   height: 16px;

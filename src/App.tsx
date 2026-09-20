@@ -26,7 +26,7 @@ import {
   SquareTerminal,
   X,
 } from 'lucide-react'
-import type { ConnectionProfile } from './conexum'
+import type { ConnectionProfile, RemoteTelemetry } from './conexum'
 
 type ToolPanel = 'sftp' | 'editor' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -36,6 +36,9 @@ type SshSessionTab = {
   id: string
   profile: ConnectionProfile
   status: SessionStatus
+  currentDirectory: string | null
+  telemetry: RemoteTelemetry | null
+  telemetryStatus: 'idle' | 'loading' | 'available' | 'unavailable'
 }
 
 type TerminalHandle = {
@@ -49,6 +52,29 @@ const SIDEBAR_WIDTH_KEY = 'conexum.sidebarWidth.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const BRAND_ICON = './brand/conexum-icon.png'
 const BRAND_BANNER = './brand/conexum-welcome-banner.png'
+
+function parseOsc7Directory(value: string) {
+  if (!value || value.length > 4_096 || /[\r\n\0]/.test(value)) return null
+  try {
+    const location = new URL(value)
+    if (location.protocol !== 'file:') return null
+    let directory = location.pathname
+    try {
+      directory = decodeURIComponent(directory)
+    } catch {
+      // Keep the encoded path visible when a shell emits a literal percent sign.
+    }
+    return directory.startsWith('/') ? directory : null
+  } catch {
+    return null
+  }
+}
+
+function compactDirectory(directory: string, username: string) {
+  const homes = [`/home/${username}`, `/Users/${username}`]
+  const home = homes.find((candidate) => directory === candidate || directory.startsWith(`${candidate}/`))
+  return home ? `~${directory.slice(home.length)}` : directory
+}
 
 function loadProfiles(): ConnectionProfile[] {
   try {
@@ -73,8 +99,9 @@ function loadRecentConnections(): string[] {
 
 const TerminalView = forwardRef<TerminalHandle, {
   onStatusChange(status: SessionStatus): void
+  onDirectoryChange(directory: string): void
   onIdentityNeeded(profile: ConnectionProfile): void
-}>(function TerminalView({ onStatusChange, onIdentityNeeded }, ref) {
+}>(function TerminalView({ onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -121,6 +148,11 @@ const TerminalView = forwardRef<TerminalHandle, {
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
       if (sessionIdRef.current) window.conexum?.ssh.resize(sessionIdRef.current, cols, rows)
     })
+    const directoryDisposable = terminal.parser.registerOscHandler(7, (value) => {
+      const directory = parseOsc7Directory(value)
+      if (directory) onDirectoryChange(directory)
+      return true
+    })
     const removeDataListener = window.conexum?.ssh.onData(({ sessionId, data }) => {
       if (sessionId !== sessionIdRef.current) return
       terminal.write(data)
@@ -146,12 +178,13 @@ const TerminalView = forwardRef<TerminalHandle, {
       removeExitListener?.()
       inputDisposable.dispose()
       resizeDisposable.dispose()
+      directoryDisposable.dispose()
       observer.disconnect()
       terminal.dispose()
       terminalRef.current = null
       fitRef.current = null
     }
-  }, [onIdentityNeeded, onStatusChange])
+  }, [onDirectoryChange, onIdentityNeeded, onStatusChange])
 
   useImperativeHandle(ref, () => ({
     async connect(profile) {
@@ -205,14 +238,16 @@ const TerminalView = forwardRef<TerminalHandle, {
   return <div className="terminal-host" ref={hostRef} aria-label="Terminal SSH" />
 })
 
-function ManagedTerminalSession({ session, onHandle, onStatusChange, onIdentityNeeded }: {
+function ManagedTerminalSession({ session, onHandle, onStatusChange, onDirectoryChange, onIdentityNeeded }: {
   session: SshSessionTab
   onHandle(sessionId: string, handle: TerminalHandle | null): void
   onStatusChange(sessionId: string, status: SessionStatus): void
+  onDirectoryChange(sessionId: string, directory: string): void
   onIdentityNeeded(profile: ConnectionProfile): void
 }) {
   const terminalRef = useRef<TerminalHandle>(null)
   const handleStatusChange = useCallback((status: SessionStatus) => onStatusChange(session.id, status), [onStatusChange, session.id])
+  const handleDirectoryChange = useCallback((directory: string) => onDirectoryChange(session.id, directory), [onDirectoryChange, session.id])
   const handleIdentityNeeded = useCallback((profile: ConnectionProfile) => onIdentityNeeded(profile), [onIdentityNeeded])
 
   useEffect(() => {
@@ -223,7 +258,7 @@ function ManagedTerminalSession({ session, onHandle, onStatusChange, onIdentityN
     return () => onHandle(session.id, null)
   }, [])
 
-  return <TerminalView ref={terminalRef} onStatusChange={handleStatusChange} onIdentityNeeded={handleIdentityNeeded} />
+  return <TerminalView ref={terminalRef} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
 }
 
 function ToolButton({ label, icon, active, disabled, onClick }: {
@@ -466,6 +501,30 @@ export function App() {
     }
   }, [contextMenu])
 
+  useEffect(() => {
+    const api = window.conexum
+    if (mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || !api) return
+    let disposed = false
+
+    const refreshTelemetry = async () => {
+      setSessions((current) => current.map((session) => session.id === activeSessionId && !session.telemetry
+        ? { ...session, telemetryStatus: 'loading' }
+        : session))
+      const telemetry = await api.ssh.getTelemetry(activeSessionId)
+      if (disposed) return
+      setSessions((current) => current.map((session) => session.id === activeSessionId
+        ? { ...session, telemetry, telemetryStatus: telemetry ? 'available' : 'unavailable' }
+        : session))
+    }
+
+    void refreshTelemetry()
+    const timer = window.setInterval(() => void refreshTelemetry(), 9_000)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [activeSessionId, activeSession?.status, mainView])
+
   const openNewProfile = () => {
     setEditingProfile(null)
     setIdentityRequiredProfileId(null)
@@ -493,7 +552,18 @@ export function App() {
   }, [])
 
   const updateSessionStatus = useCallback((sessionId: string, status: SessionStatus) => {
-    setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, status } : session))
+    setSessions((current) => current.map((session) => session.id === sessionId
+      ? {
+          ...session,
+          status,
+          ...(status === 'connecting' ? { currentDirectory: null, telemetry: null, telemetryStatus: 'idle' as const } : {}),
+          ...(status === 'disconnected' || status === 'error' ? { telemetryStatus: 'idle' as const } : {}),
+        }
+      : session))
+  }, [])
+
+  const updateSessionDirectory = useCallback((sessionId: string, currentDirectory: string) => {
+    setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, currentDirectory } : session))
   }, [])
 
   const saveProfile = (profile: ConnectionProfile) => {
@@ -513,7 +583,14 @@ export function App() {
 
   const openSession = (profile: ConnectionProfile) => {
     const sessionId = crypto.randomUUID()
-    setSessions((current) => [...current, { id: sessionId, profile, status: 'connecting' }])
+    setSessions((current) => [...current, {
+      id: sessionId,
+      profile,
+      status: 'connecting',
+      currentDirectory: null,
+      telemetry: null,
+      telemetryStatus: 'idle',
+    }])
     setActiveSessionId(sessionId)
     setSelectedId(profile.id)
     setMainView('terminal')
@@ -595,6 +672,11 @@ export function App() {
     setActiveTool((current) => current === tool ? null : tool)
   }
 
+  const activeDirectory = activeSession?.currentDirectory
+    ? compactDirectory(activeSession.currentDirectory, activeSession.profile.username)
+    : null
+  const telemetryStale = Boolean(activeSession?.telemetry && Date.now() - activeSession.telemetry.updatedAt > 25_000)
+
   return (
     <main className="app-shell">
       <header className="titlebar">
@@ -671,7 +753,7 @@ export function App() {
               </div>
               {sessions.map((session) => (
                 <div key={session.id} className={`terminal-panel terminal-layer ${mainView === 'terminal' && activeSessionId === session.id ? 'visible' : ''}`}>
-                  <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onIdentityNeeded={handleIdentityNeeded} />
+                  <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
                 </div>
               ))}
             </div>
@@ -690,8 +772,26 @@ export function App() {
           </div>
 
           <footer className="statusbar">
-            <div className="status-left"><span className={`status-dot ${activeSessionCount > 0 ? 'online' : ''}`} /><span>{mainView === 'terminal' && activeSession ? statusLabels[activeSession.status] : activeSessionCount > 0 ? `${activeSessionCount} ${activeSessionCount === 1 ? 'sesión activa' : 'sesiones activas'}` : 'Sin conexión'}</span><span className="divider" /><span>{mainView === 'terminal' && activeSession ? `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span></div>
-            <div className="status-right"><span className="system-ssh">/usr/bin/ssh</span></div>
+            <div className="status-left">
+              <span className={`status-dot ${activeSessionCount > 0 ? 'online' : ''}`} />
+              <span>{mainView === 'terminal' && activeSession ? statusLabels[activeSession.status] : activeSessionCount > 0 ? `${activeSessionCount} ${activeSessionCount === 1 ? 'sesión activa' : 'sesiones activas'}` : 'Sin conexión'}</span>
+              <span className="divider" />
+              <span>{mainView === 'terminal' && activeSession ? `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span>
+              {mainView === 'terminal' && activeSession?.status === 'connected' && (
+                <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? 'Activá la integración OSC 7 para mostrar el directorio remoto'}>
+                  {activeDirectory ?? 'Ruta —'}
+                </span>
+              )}
+            </div>
+            <div className={`status-right ${telemetryStale ? 'stale' : ''}`}>
+              {mainView === 'terminal' && activeSession?.status === 'connected' && (
+                <>
+                  <span title="Uso aproximado de CPU del servidor">CPU {activeSession.telemetry?.cpuPercent ?? '—'}{activeSession.telemetry?.cpuPercent !== null && activeSession.telemetry?.cpuPercent !== undefined ? '%' : ''}</span>
+                  <span title="Uso aproximado de memoria del servidor">RAM {activeSession.telemetry?.memoryPercent ?? '—'}{activeSession.telemetry ? '%' : ''}</span>
+                </>
+              )}
+              <span className="system-ssh">/usr/bin/ssh</span>
+            </div>
           </footer>
         </section>
       </section>
