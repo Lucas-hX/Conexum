@@ -2,6 +2,18 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.5.3 — 2026-09-20
+
+### Agregado
+
+- Reconexión manual dentro de la misma pestaña, conservando el historial visible de la terminal.
+- Reintento manual de transferencias SFTP fallidas o canceladas.
+
+### Seguridad
+
+- Los reintentos reutilizan únicamente rutas que el usuario seleccionó previamente y vuelven a comprobar que el archivo o carpeta local exista.
+- No se reanudan archivos parciales automáticamente: cada reintento comienza de nuevo por decisión explícita del usuario.
+
 ## 0.5.2 — 2026-09-20
 
 ### Mejorado

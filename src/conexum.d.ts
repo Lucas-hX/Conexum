@@ -43,6 +43,7 @@ export type SftpTransferProgress = {
   progress: number
   status: 'queued' | 'active' | 'completed' | 'canceled' | 'error'
   error?: string
+  canRetry: boolean
   updatedAt: number
 }
 
@@ -72,6 +73,7 @@ declare global {
         chooseDownload(suggestedName: string): Promise<string | null>
         transfers(sessionId: string): Promise<SftpTransferProgress[]>
         enqueueTransfer(request: { sessionId: string; direction: 'upload' | 'download'; localPath: string; remotePath: string; name: string }): Promise<{ transferId: string }>
+        retryTransfer(transferId: string): Promise<{ transferId: string }>
         cancelTransfer(transferId: string): void
         onTransferProgress(callback: (event: SftpTransferProgress) => void): () => void
       }

@@ -141,7 +141,9 @@ Desde el panel se puede:
 
 Conexum utiliza `/usr/bin/sftp` y el socket multiplexado de la sesión existente. No guarda credenciales ni implementa el protocolo SFTP. Los archivos locales sólo pueden transferirse después de seleccionarlos explícitamente mediante Finder, el diálogo de macOS o arrastrar y soltar.
 
-Al cancelar una transferencia, el servidor o la carpeta local pueden conservar un archivo parcial. Conexum lo deja visible para que el usuario decida si desea inspeccionarlo, reanudar manualmente o eliminarlo; nunca borra archivos automáticamente después de una interrupción.
+Al cancelar una transferencia, el servidor o la carpeta local pueden conservar un archivo parcial. Conexum lo deja visible para que el usuario decida si desea inspeccionarlo, reintentar la operación o eliminarlo; nunca borra archivos automáticamente después de una interrupción.
+
+Las transferencias fallidas o canceladas muestran un botón de reintento. El reintento vuelve a comprobar la ruta local y comienza una transferencia nueva; no intenta combinar automáticamente datos parciales.
 
 ## Primer uso
 
@@ -150,6 +152,8 @@ Al cancelar una transferencia, el servidor o la carpeta local pueden conservar u
 3. Hacé doble clic sobre un servidor para abrir una sesión.
 4. Repetí el doble clic para abrir otra sesión independiente del mismo servidor.
 5. Hacé doble clic sobre una pestaña para cerrarla con confirmación.
+
+Si una conexión finaliza, podés usar **Reconectar** en la terminal o en la barra superior. Conexum conserva el historial visible de esa pestaña y abre una sesión SSH nueva con el mismo perfil.
 
 Con dos o más sesiones abiertas, **Dividir** muestra dos terminales lado a lado. Al presionarlo nuevamente se convierte en una cuadrícula de hasta cuatro sesiones; una tercera pulsación vuelve a la vista única. La sesión activa se mantiene siempre dentro de la vista dividida y podés cambiarla desde las pestañas superiores o haciendo clic en otra terminal.
 

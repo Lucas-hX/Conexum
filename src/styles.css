@@ -573,6 +573,32 @@ button {
   background: radial-gradient(circle at 50% 15%, #0e151c 0%, #080d12 45%);
 }
 
+.terminal-reconnect {
+  position: absolute;
+  z-index: 4;
+  right: 18px;
+  bottom: 16px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid #315570;
+  border-radius: 7px;
+  color: #a9d5f5;
+  background: #132638e8;
+  box-shadow: 0 8px 24px #0007;
+  cursor: pointer;
+  font-size: 10px;
+  backdrop-filter: blur(8px);
+}
+
+.terminal-reconnect:hover {
+  color: #e5f5ff;
+  border-color: #4387b7;
+  background: #17344b;
+}
+
 .welcome-home {
   height: 100%;
   overflow: auto;

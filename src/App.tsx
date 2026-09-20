@@ -19,6 +19,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Settings2,
@@ -48,7 +49,7 @@ type SshSessionTab = {
 }
 
 type TerminalHandle = {
-  connect(profile: ConnectionProfile): Promise<void>
+  connect(profile: ConnectionProfile, options?: { preserveHistory?: boolean }): Promise<void>
   disconnect(): void
 }
 
@@ -194,7 +195,7 @@ const TerminalView = forwardRef<TerminalHandle, {
   }, [onDirectoryChange, onIdentityNeeded, onStatusChange])
 
   useImperativeHandle(ref, () => ({
-    async connect(profile) {
+    async connect(profile, options = {}) {
       const terminal = terminalRef.current
       const fitAddon = fitRef.current
       if (!terminal || !fitAddon) return
@@ -209,8 +210,13 @@ const TerminalView = forwardRef<TerminalHandle, {
       if (sessionIdRef.current) window.conexum.ssh.disconnect(sessionIdRef.current)
       activeProfileRef.current = profile
       authenticationFailedRef.current = false
-      terminal.reset()
-      terminal.writeln(`\x1b[90m[Conexum] Abriendo /usr/bin/ssh hacia ${profile.username}@${profile.host}:${profile.port}…\x1b[0m`)
+      if (options.preserveHistory) {
+        terminal.writeln('')
+        terminal.writeln(`\x1b[90m[Conexum] Reconectando con ${profile.username}@${profile.host}:${profile.port}…\x1b[0m`)
+      } else {
+        terminal.reset()
+        terminal.writeln(`\x1b[90m[Conexum] Abriendo /usr/bin/ssh hacia ${profile.username}@${profile.host}:${profile.port}…\x1b[0m`)
+      }
       onStatusChange('connecting')
 
       sessionIdRef.current = sessionId
@@ -624,7 +630,7 @@ export function App() {
     if (mainView === 'terminal' && activeSession) {
       const handle = terminalRefs.current.get(activeSession.id)
       if (activeSession.status === 'connected' || activeSession.status === 'connecting') handle?.disconnect()
-      else void handle?.connect(activeSession.profile)
+      else void handle?.connect(activeSession.profile, { preserveHistory: true })
       return
     }
     if (selected) openSession(selected)
@@ -765,7 +771,7 @@ export function App() {
           <ToolButton icon={<Plus size={16} />} label="Nueva conexión" onClick={openNewProfile} />
           <ToolButton
             icon={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? <Square size={14} /> : <Play size={15} />}
-            label={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? 'Desconectar' : 'Conectar'}
+            label={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? 'Desconectar' : mainView === 'terminal' && activeSession ? 'Reconectar' : 'Conectar'}
             disabled={mainView === 'terminal' ? !activeSession : !selected}
             onClick={connectOrDisconnect}
           />
@@ -835,6 +841,11 @@ export function App() {
                 const singleVisible = mainView === 'terminal' && !splitMode && activeSessionId === session.id
                 return <div key={session.id} className={`terminal-panel terminal-layer ${splitVisible || singleVisible ? 'visible' : ''} ${splitMode ? (splitVisible ? 'split-pane' : 'split-hidden') : ''}`} onMouseDown={() => setActiveSessionId(session.id)}>
                   <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
+                  {(session.status === 'disconnected' || session.status === 'error') && (
+                    <button className="terminal-reconnect" onClick={(event) => { event.stopPropagation(); void terminalRefs.current.get(session.id)?.connect(session.profile, { preserveHistory: true }) }}>
+                      <RefreshCw size={13} />Reconectar
+                    </button>
+                  )}
                 </div>
               })}
             </div>

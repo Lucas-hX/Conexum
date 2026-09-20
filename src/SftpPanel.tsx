@@ -162,6 +162,18 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
     }
   }
 
+  const retryTransfer = async (transfer: SftpTransferProgress) => {
+    const api = window.conexum?.sftp
+    if (!api || !transfer.canRetry) return
+    setError(null)
+    try {
+      await api.retryTransfer(transfer.transferId)
+      setTransfersExpanded(true)
+    } catch (retryError) {
+      setError(errorMessage(retryError))
+    }
+  }
+
   const createFolder = async () => {
     const name = window.prompt('Nombre de la carpeta nueva:')?.trim()
     if (!name) return
@@ -284,7 +296,11 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
               <span>{transfer.name}</span>
               <div className="transfer-progress"><i style={{ width: `${transfer.progress}%` }} /></div>
               <small>{transfer.status === 'active' ? `${transfer.progress}%` : transferStatusLabel[transfer.status]}</small>
-              {(transfer.status === 'queued' || transfer.status === 'active') && <button onClick={() => window.conexum?.sftp.cancelTransfer(transfer.transferId)} aria-label={`Cancelar ${transfer.name}`}><X size={11} /></button>}
+              {(transfer.status === 'queued' || transfer.status === 'active') ? (
+                <button onClick={() => window.conexum?.sftp.cancelTransfer(transfer.transferId)} aria-label={`Cancelar ${transfer.name}`} title="Cancelar"><X size={11} /></button>
+              ) : transfer.canRetry ? (
+                <button onClick={() => void retryTransfer(transfer)} aria-label={`Reintentar ${transfer.name}`} title="Reintentar"><RefreshCw size={11} /></button>
+              ) : <span />}
             </div>
           ))}</div>}
         </div>

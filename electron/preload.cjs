@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('conexum', {
     chooseDownload: (suggestedName) => ipcRenderer.invoke('sftp:choose-download', suggestedName),
     transfers: (sessionId) => ipcRenderer.invoke('sftp:transfers', { sessionId }),
     enqueueTransfer: (request) => ipcRenderer.invoke('sftp:enqueue-transfer', request),
+    retryTransfer: (transferId) => ipcRenderer.invoke('sftp:retry-transfer', { transferId }),
     cancelTransfer: (transferId) => ipcRenderer.send('sftp:cancel-transfer', { transferId }),
     onTransferProgress: (callback) => {
       const listener = (_event, payload) => callback(payload)
