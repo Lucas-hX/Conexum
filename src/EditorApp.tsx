@@ -107,6 +107,7 @@ export function EditorApp() {
   const [treeSelectedPath, setTreeSelectedPath] = useState<string | null>(null)
   const activeDocument = documents.find((document) => document.path === activePath) ?? null
   const dirty = documents.some((document) => document.draft !== document.content)
+  const saving = documents.some((document) => document.saving)
 
   const openFile = useCallback(async (remotePath: string) => {
     if (!context || !window.conexum) return
@@ -154,31 +155,31 @@ export function EditorApp() {
   }, [])
 
   useEffect(() => {
-    window.conexum?.editor.setDirty(dirty)
-  }, [dirty])
+    window.conexum?.editor.setState({ dirty, saving })
+  }, [dirty, saving])
 
-  const saveDocument = useCallback(async (documentToSave: DocumentTab, force = false) => {
+  const saveDocument = useCallback(async (documentToSave: DocumentTab) => {
     if (!context || !window.conexum || documentToSave.saving || documentToSave.draft === documentToSave.content) return
+    const savedDraft = documentToSave.draft
     setDocuments((current) => current.map((document) => document.path === documentToSave.path ? { ...document, saving: true } : document))
     setError(null)
     try {
       const result = await window.conexum.editor.writeText({
         sessionId: context.sessionId,
         remotePath: documentToSave.path,
-        content: documentToSave.draft,
+        content: savedDraft,
         baselineFingerprint: documentToSave.fingerprint,
-        force,
       })
       if (result.conflict) {
         setDocuments((current) => current.map((document) => document.path === documentToSave.path ? { ...document, saving: false } : document))
         if (window.confirm('El archivo cambió en el servidor desde que lo abriste. ¿Sobrescribir la versión remota con tus cambios?')) {
-          await saveDocument({ ...documentToSave, saving: false, fingerprint: result.current.fingerprint }, true)
+          await saveDocument({ ...documentToSave, saving: false, fingerprint: result.current.fingerprint })
         }
         return
       }
       setDocuments((current) => current.map((document) => document.path === documentToSave.path ? {
         ...document,
-        content: document.draft,
+        content: savedDraft,
         fingerprint: result.file.fingerprint,
         size: result.file.size,
         modified: result.file.modified,
@@ -203,12 +204,21 @@ export function EditorApp() {
   }, [activeDocument, saveDocument])
 
   const closeDocument = (document: DocumentTab) => {
+    if (document.saving) return
     if (document.draft !== document.content && !window.confirm(`¿Cerrar ${document.name} sin guardar los cambios?`)) return
     setDocuments((current) => current.filter((item) => item.path !== document.path))
     if (activePath === document.path) {
       const index = documents.findIndex((item) => item.path === document.path)
       const remaining = documents.filter((item) => item.path !== document.path)
       setActivePath(remaining[Math.min(index, remaining.length - 1)]?.path ?? null)
+    }
+  }
+
+  const closeEditorWindow = async () => {
+    try {
+      await window.conexum?.editor.closeWindow({ dirty, saving })
+    } catch (closeError) {
+      setError(errorMessage(closeError))
     }
   }
 
@@ -220,7 +230,10 @@ export function EditorApp() {
     <main className="editor-shell">
       <header className="editor-titlebar">
         <div className="editor-window-brand"><img src={BRAND_ICON} alt="" /><strong>Conexum Editor</strong>{context && <span>— {context.profileName}</span>}</div>
-        <button className="editor-save-button" disabled={!activeDocument || activeDocument.draft === activeDocument.content || activeDocument.saving} onClick={() => activeDocument && void saveDocument(activeDocument)} aria-label="Guardar archivo"><Save size={15} /></button>
+        <div className="editor-window-actions">
+          <button className="editor-save-button" disabled={!activeDocument || activeDocument.draft === activeDocument.content || activeDocument.saving} onClick={() => activeDocument && void saveDocument(activeDocument)} aria-label="Guardar archivo" title="Guardar archivo (⌘S)"><Save size={15} /></button>
+          <button className="editor-close-button" onClick={() => void closeEditorWindow()} aria-label="Cerrar editor" title="Cerrar editor"><X size={14} /><span>Cerrar</span></button>
+        </div>
       </header>
       <section className="editor-workspace">
         <aside className="editor-explorer">
@@ -230,10 +243,12 @@ export function EditorApp() {
         <section className="editor-main">
           <div className="editor-tabs">
             {documents.map((document) => (
-              <button key={document.path} className={`editor-tab ${activePath === document.path ? 'active' : ''}`} onClick={() => setActivePath(document.path)} title={document.path}>
-                <File size={12} /><span>{document.name}</span>{document.draft !== document.content && <i />}
-                <span className="editor-tab-close" onClick={(event) => { event.stopPropagation(); closeDocument(document) }}><X size={12} /></span>
-              </button>
+              <div key={document.path} className={`editor-tab ${activePath === document.path ? 'active' : ''}`}>
+                <button className="editor-tab-select" onClick={() => setActivePath(document.path)} title={document.path} aria-label={`Abrir pestaña ${document.name}`}>
+                  <File size={12} /><span>{document.name}</span>{document.draft !== document.content && <i />}
+                </button>
+                <button className="editor-tab-close" disabled={document.saving} onClick={() => closeDocument(document)} aria-label={`Cerrar pestaña ${document.name}`} title="Cerrar archivo"><X size={12} /></button>
+              </div>
             ))}
           </div>
           {error && <div className="editor-error"><span>{error}</span><button onClick={() => setError(null)}><X size={13} /></button></div>}

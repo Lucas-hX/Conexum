@@ -26,6 +26,7 @@ const {
   buildListBatch,
   buildMutationBatch,
   buildReadFileBatch,
+  decodeEditorText,
   buildSftpArgs,
   buildTransferCommand,
   buildWriteFileBatch,
@@ -190,9 +191,7 @@ async function readRemoteText(context, remotePath) {
     await runSftpBatch(context, buildReadFileBatch(validatedPath, temporaryFile))
     const content = fs.readFileSync(temporaryFile)
     if (content.length > MAX_EDITOR_FILE_BYTES) throw new Error('El archivo supera el límite seguro de 2 MB para el editor.')
-    if (content.includes(0)) throw new Error('El archivo parece ser binario y no puede abrirse en el editor de texto.')
-    const text = content.toString('utf8')
-    if (text.includes('\uFFFD')) throw new Error('El archivo no parece estar codificado como UTF-8.')
+    const text = decodeEditorText(content)
     return {
       path: validatedPath,
       name: entry.name,
@@ -217,7 +216,7 @@ async function writeRemoteText(context, request) {
   }
 
   const current = await readRemoteText(context, remotePath)
-  if (!request.force && current.fingerprint !== request.baselineFingerprint) {
+  if (current.fingerprint !== request.baselineFingerprint) {
     return { conflict: true, current: { fingerprint: current.fingerprint, size: current.size, modified: current.modified } }
   }
 
@@ -796,6 +795,7 @@ function createWindow() {
 
 function createEditorWindow(parent, context, initialPath) {
   let allowClose = false
+  let closeDialogOpen = false
   const editorWindow = new BrowserWindow({
     width: 1360,
     height: 860,
@@ -816,15 +816,31 @@ function createEditorWindow(parent, context, initialPath) {
     },
   })
 
-  const state = { ...context, initialPath: initialPath ?? null, dirty: false }
+  const state = { ...context, initialPath: initialPath ?? null, dirty: false, saving: false }
   const webContentsId = editorWindow.webContents.id
   editorWindows.set(context.sessionId, editorWindow)
   editorContexts.set(webContentsId, state)
 
   editorWindow.once('ready-to-show', () => editorWindow.show())
   editorWindow.on('close', (event) => {
-    if (allowClose || !state.dirty) return
+    if (allowClose) return
+    if (state.saving) {
+      event.preventDefault()
+      if (!closeDialogOpen) {
+        closeDialogOpen = true
+        void dialog.showMessageBox(editorWindow, {
+          type: 'info',
+          buttons: ['Entendido'],
+          title: 'Guardado en curso',
+          message: 'Esperá a que termine el guardado remoto antes de cerrar el editor.',
+        }).finally(() => { closeDialogOpen = false })
+      }
+      return
+    }
+    if (!state.dirty) return
     event.preventDefault()
+    if (closeDialogOpen) return
+    closeDialogOpen = true
     void dialog.showMessageBox(editorWindow, {
       type: 'warning',
       buttons: ['Cerrar sin guardar', 'Cancelar'],
@@ -838,7 +854,7 @@ function createEditorWindow(parent, context, initialPath) {
         allowClose = true
         editorWindow.close()
       }
-    })
+    }).finally(() => { closeDialogOpen = false })
   })
   editorWindow.on('closed', () => {
     editorWindows.delete(context.sessionId)
@@ -877,9 +893,21 @@ function registerEditorWindowHandlers() {
     return { sessionId: context.sessionId, profileName: context.profileName, initialDirectory: context.initialDirectory, initialPath: context.initialPath }
   })
 
-  ipcMain.on('editor:set-dirty', (event, dirty) => {
+  ipcMain.on('editor:set-state', (event, { dirty, saving } = {}) => {
     const context = editorContexts.get(event.sender.id)
-    if (context) context.dirty = dirty === true
+    if (context) {
+      context.dirty = dirty === true
+      context.saving = saving === true
+    }
+  })
+
+  ipcMain.handle('editor:close-window', (event, { dirty, saving } = {}) => {
+    const context = editorContexts.get(event.sender.id)
+    const editorWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!context || !editorWindow || editorWindow.isDestroyed()) throw new Error('La ventana del editor ya no está disponible.')
+    context.dirty = dirty === true
+    context.saving = saving === true
+    editorWindow.close()
   })
 }
 

@@ -170,6 +170,7 @@ La primera versión incluye:
 - confirmación si el archivo cambió en el servidor;
 - reemplazo mediante un archivo temporal remoto y conservación de permisos;
 - confirmación al cerrar documentos o la ventana con cambios pendientes;
+- botón visible para cerrar la ventana y protección mientras un archivo se está guardando;
 - rechazo de archivos binarios, no UTF-8 o mayores a 2 MB.
 
 El editor depende de una sesión SSH activa. Si la sesión termina, el contenido abierto permanece visible, pero es necesario reconectarla para volver a navegar o guardar.

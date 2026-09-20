@@ -136,6 +136,16 @@ function buildReadFileBatch(remotePath, localPath) {
   return `get ${quoteSftpPath(remote)} ${quoteSftpPath(localPath)}\n`
 }
 
+function decodeEditorText(content) {
+  if (!Buffer.isBuffer(content)) throw new Error('El contenido remoto no es válido.')
+  if (content.includes(0)) throw new Error('El archivo parece ser binario y no puede abrirse en el editor de texto.')
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(content)
+  } catch {
+    throw new Error('El archivo no parece estar codificado como UTF-8.')
+  }
+}
+
 function permissionsToMode(permissions) {
   if (typeof permissions !== 'string' || !/^[bcdlps-][rwxStTs-]{9}$/.test(permissions)) return null
   const triplets = [permissions.slice(1, 4), permissions.slice(4, 7), permissions.slice(7, 10)]
@@ -213,6 +223,7 @@ module.exports = {
   buildListBatch,
   buildMutationBatch,
   buildReadFileBatch,
+  decodeEditorText,
   buildSftpArgs,
   buildTransferCommand,
   buildWriteFileBatch,

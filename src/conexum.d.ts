@@ -113,11 +113,12 @@ declare global {
         openWindow(request: { sessionId: string; profileName: string; initialDirectory: string; remotePath?: string }): Promise<boolean>
         getContext(): Promise<{ sessionId: string; profileName: string; initialDirectory: string; initialPath: string | null }>
         readText(sessionId: string, remotePath: string): Promise<RemoteTextFile>
-        writeText(request: { sessionId: string; remotePath: string; content: string; baselineFingerprint: string; force?: boolean }): Promise<
+        writeText(request: { sessionId: string; remotePath: string; content: string; baselineFingerprint: string }): Promise<
           | { conflict: true; current: { fingerprint: string; size: number; modified: string } }
           | { conflict: false; file: Omit<RemoteTextFile, 'content'> }
         >
-        setDirty(dirty: boolean): void
+        setState(state: { dirty: boolean; saving: boolean }): void
+        closeWindow(state: { dirty: boolean; saving: boolean }): Promise<void>
         onOpenFile(callback: (event: { remotePath: string }) => void): () => void
       }
     }
