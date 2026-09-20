@@ -27,6 +27,7 @@ const {
   buildMutationBatch,
   buildSftpArgs,
   buildTransferCommand,
+  formatSftpError,
   parseSftpListing,
   validateRemotePath,
 } = require('./sftp-core.cjs')
@@ -105,7 +106,12 @@ function runSftpBatch(context, batch) {
     })
     let stdout = ''
     let stderr = ''
-    const timer = setTimeout(() => child.kill('SIGTERM'), 10_000)
+    let timedOut = false
+    let settled = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGTERM')
+    }, 15_000)
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString('utf8')
       if (stdout.length > 4_000_000) child.kill('SIGTERM')
@@ -116,12 +122,16 @@ function runSftpBatch(context, batch) {
     })
     child.on('error', (error) => {
       clearTimeout(timer)
+      if (settled) return
+      settled = true
       reject(error)
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      if (code === 0) resolve(stdout)
-      else reject(new Error(stderr.trim() || 'La operación SFTP no pudo completarse.'))
+      if (settled) return
+      settled = true
+      if (code === 0 && !timedOut) resolve(stdout)
+      else reject(new Error(formatSftpError(stderr, stdout, { timedOut })))
     })
     child.stdin.end(batch)
   })
@@ -185,11 +195,12 @@ async function runTransfer(job) {
           phase = 'transferring'
           process.write(`${command}\r`)
         } else if (phase === 'transferring') {
-          const transferError = /(?:^|\r?\n)(?:Couldn't|Failure|No such file|Permission denied|not found|not a regular file)/i.test(outputBuffer)
+          const transferError = /(?:^|[\r\n])(?:Couldn't|Failure|No such file|Permission denied|not found|not a regular file|stat remote)/i.test(outputBuffer)
+          const errorMessage = transferError ? formatSftpError(outputBuffer) : undefined
           outputBuffer = ''
           phase = 'closing'
           process.write('bye\r')
-          finish(transferError ? 'error' : 'completed', transferError ? 'El servidor rechazó la transferencia.' : undefined)
+          finish(transferError ? 'error' : 'completed', errorMessage)
         }
       }
     })

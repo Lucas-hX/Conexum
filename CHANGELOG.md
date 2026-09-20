@@ -2,6 +2,15 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.5.1 — 2026-09-20
+
+### Corregido
+
+- El explorador ya no descarta los resultados cuando se abre una ruta absoluta.
+- El parser acepta el formato real de listados producido por OpenSSH en macOS.
+- Los caracteres especiales de glob en rutas remotas se escapan antes de enviarlos a SFTP.
+- Los fallos de conexión, permisos, rutas y subsistema SFTP ahora muestran mensajes accionables.
+
 ## 0.5.0 — 2026-09-20
 
 ### Agregado

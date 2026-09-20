@@ -11,7 +11,7 @@ function validateRemotePath(value, { allowEmpty = false } = {}) {
 }
 
 function quoteSftpPath(value) {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+  return `"${value.replace(/([\\"*?\[])/g, '\\$1')}"`
 }
 
 function appendSftpConnectionArgs(args, connection) {
@@ -41,7 +41,9 @@ function buildSftpArgs(connection, controlPath, { batch = true } = {}) {
     '-o', 'RemoteCommand=none',
     '-o', `ControlPath=${controlPath}`,
   ]
-  if (batch) args.unshift('-q')
+  // Batch mode enables quiet mode implicitly. `-N` restores diagnostics while
+  // commands themselves are hidden with the `@` prefix below.
+  if (batch) args.unshift('-N')
   if (batch) args.push('-b', '-')
   args.push(appendSftpConnectionArgs(args, connection))
   return args
@@ -49,7 +51,9 @@ function buildSftpArgs(connection, controlPath, { batch = true } = {}) {
 
 function buildListBatch(remotePath = '') {
   const validated = validateRemotePath(remotePath, { allowEmpty: true })
-  return `pwd\nls -la${validated ? ` ${quoteSftpPath(validated)}` : ''}\n`
+  // Listing an absolute path makes OpenSSH prefix every returned name with
+  // that path. Change directory first so names remain relative and parseable.
+  return `${validated ? `@cd ${quoteSftpPath(validated)}\n` : ''}@pwd\n@ls -lan\n`
 }
 
 function buildMutationBatch(operation, sourcePath, destinationPath) {
@@ -67,9 +71,9 @@ function buildMutationBatch(operation, sourcePath, destinationPath) {
 function parseSftpListing(output, requestedPath = '') {
   if (typeof output !== 'string' || output.length > 4_000_000) throw new Error('La respuesta SFTP es demasiado grande.')
   const pwdMatch = output.match(/^Remote working directory:\s*(.+)$/m)
-  const directory = validateRemotePath(requestedPath || pwdMatch?.[1] || '/')
+  const directory = validateRemotePath(pwdMatch?.[1] || requestedPath || '/')
   const entries = []
-  const longEntry = /^([bcdlps-][rwxStTs-]{9})\s+\d+\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(.+)$/
+  const longEntry = /^([bcdlps-][rwxStTs-]{9})\s+\S+\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)\s+(\d{1,2})\s+(\S+)\s+(.+)$/
 
   for (const rawLine of output.split(/\r?\n/)) {
     const match = rawLine.match(longEntry)
@@ -95,6 +99,23 @@ function parseSftpListing(output, requestedPath = '') {
     return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
   })
   return { directory, entries }
+}
+
+function formatSftpError(stderr = '', stdout = '', { timedOut = false } = {}) {
+  if (timedOut) return 'El servidor SFTP tardó demasiado en responder.'
+  const detail = `${stderr}\n${stdout}`.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').trim()
+  if (/subsystem request failed|subsystem.*not found|unknown subsystem/i.test(detail)) {
+    return 'El servidor SSH no tiene habilitado el subsistema SFTP.'
+  }
+  if (/control socket connect.*no such file|mux_client_request_session.*master/i.test(detail)) {
+    return 'La conexión SSH todavía no está lista para SFTP. Esperá unos segundos y volvé a intentar.'
+  }
+  if (/permission denied/i.test(detail)) return 'Permiso denegado por el servidor SFTP.'
+  if (/no such file|couldn.t stat|stat remote/i.test(detail)) return 'La ruta remota no existe o ya no está disponible.'
+  if (/connection refused/i.test(detail)) return 'El servidor rechazó la conexión SFTP.'
+  if (/timed out|operation timed out/i.test(detail)) return 'La conexión SFTP agotó el tiempo de espera.'
+  const lastLine = detail.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1)
+  return lastLine && lastLine.length <= 500 ? lastLine : 'La operación SFTP no pudo completarse.'
 }
 
 function buildTransferCommand(direction, localPath, remotePath) {
@@ -155,6 +176,7 @@ module.exports = {
   buildMutationBatch,
   buildSftpArgs,
   buildTransferCommand,
+  formatSftpError,
   parseSftpListing,
   quoteSftpPath,
   validateRemotePath,
