@@ -25,6 +25,9 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Identidad nativa de Conexum en macOS y paquete `.app` local sin firma.
 - Pruebas automatizadas del núcleo SSH, mensajes de terminal y limpieza de sesiones.
 - Validación automática y paquete de prueba mediante GitHub Actions.
+- Directorio remoto por pestaña mediante integración OSC 7 opcional.
+- CPU y RAM de la pestaña activa mediante un canal SSH multiplexado de sólo lectura.
+- Actualizador local seguro para builds alpha.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 
@@ -49,17 +52,17 @@ Un colaborador puede clonar el repositorio, ejecutar la aplicación y generar un
 
 Objetivo: mostrar información útil del servidor sin afectar la experiencia de la terminal.
 
-- Crear un canal SSH auxiliar y multiplexado por conexión.
-- Obtener CPU y RAM mediante comandos remotos de sólo lectura.
-- Actualizar la pestaña visible aproximadamente cada 8–10 segundos.
-- Reducir o pausar las consultas de pestañas en segundo plano.
-- Compartir métricas entre sesiones del mismo servidor para evitar trabajo duplicado.
-- Mostrar valores compactos en la barra inferior, sin gráficos permanentes.
-- Marcar métricas antiguas o no disponibles sin presentar errores invasivos.
-- Detectar el sistema remoto y adaptar la lectura para Linux y macOS/BSD.
-- Implementar integración de shell para recibir el directorio activo mediante OSC 7.
-- Mantener un directorio independiente para cada pestaña.
-- Hacer optativa la integración de shell y documentar Bash, Zsh y Fish.
+- [x] Crear un canal SSH auxiliar y multiplexado por conexión.
+- [x] Obtener CPU y RAM mediante comandos remotos de sólo lectura.
+- [x] Actualizar la pestaña visible aproximadamente cada 8–10 segundos.
+- [x] Pausar las consultas de pestañas en segundo plano.
+- [x] Compartir métricas entre sesiones del mismo servidor para evitar trabajo duplicado.
+- [x] Mostrar valores compactos en la barra inferior, sin gráficos permanentes.
+- [x] Marcar métricas antiguas o no disponibles sin presentar errores invasivos.
+- [x] Detectar el sistema remoto y adaptar la lectura para Linux y macOS.
+- [x] Implementar integración de shell para recibir el directorio activo mediante OSC 7.
+- [x] Mantener un directorio independiente para cada pestaña.
+- [x] Hacer optativa la integración de shell y documentar Bash, Zsh y Fish.
 
 ### Presentación prevista
 
@@ -70,6 +73,8 @@ Objetivo: mostrar información útil del servidor sin afectar la experiencia de 
 ### Criterio de salida
 
 La pestaña activa muestra directorio, CPU y RAM con una sobrecarga imperceptible, y la terminal no recibe texto ni comandos de telemetría.
+
+**Estado:** implementada. Pendiente de validación adicional en servidores macOS remotos y distribuciones Linux variadas.
 
 ## Entrega 0.4 — Explorador SFTP y transferencias
 

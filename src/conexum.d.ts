@@ -17,6 +17,13 @@ type SshConnectRequest = {
   rows: number
 }
 
+export type RemoteTelemetry = {
+  cpuPercent: number | null
+  memoryPercent: number
+  platform: string
+  updatedAt: number
+}
+
 declare global {
   interface Window {
     conexum?: {
@@ -26,6 +33,7 @@ declare global {
         write(sessionId: string, data: string): void
         resize(sessionId: string, cols: number, rows: number): void
         disconnect(sessionId: string): void
+        getTelemetry(sessionId: string): Promise<RemoteTelemetry | null>
         onData(callback: (event: { sessionId: string; data: string }) => void): () => void
         onExit(callback: (event: { sessionId: string; exitCode: number; signal?: number }) => void): () => void
       }

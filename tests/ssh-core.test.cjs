@@ -3,9 +3,12 @@ const assert = require('node:assert/strict')
 
 const {
   SessionRegistry,
+  buildTelemetrySshArgs,
   buildSshArgs,
+  calculateTelemetry,
   expandHome,
   processEnvForSsh,
+  parseTelemetrySample,
   readHostAliases,
   validateConnection,
   validateResize,
@@ -84,6 +87,65 @@ test('builds arguments for an imported SSH config alias', () => {
     '-l', 'root',
     'production',
   ])
+})
+
+test('adds a shared control socket to interactive SSH without changing the destination', () => {
+  const args = buildSshArgs({
+    host: 'example.com',
+    port: 22,
+    username: 'deploy',
+    identityFile: '',
+    configFile: '',
+    sshAlias: '',
+  }, { controlPath: '/tmp/conexum-control' })
+
+  assert.equal(args.at(-1), 'deploy@example.com')
+  assert.ok(args.includes('/tmp/conexum-control'))
+  assert.ok(args.includes('ControlMaster=auto'))
+  assert.ok(args.includes('ControlPersist=60'))
+})
+
+test('builds read-only telemetry arguments over the existing control socket', () => {
+  const args = buildTelemetrySshArgs({
+    host: 'example.com',
+    port: 2222,
+    username: 'deploy',
+    identityFile: '',
+    configFile: '',
+    sshAlias: '',
+  }, '/tmp/conexum-control')
+
+  assert.ok(args.includes('BatchMode=yes'))
+  assert.ok(args.includes('ControlMaster=no'))
+  assert.ok(args.includes('ClearAllForwardings=yes'))
+  assert.equal(args.at(-2), 'deploy@example.com')
+  assert.match(args.at(-1), /\/proc\/stat/)
+  assert.throws(() => buildTelemetrySshArgs({}, 'relative/socket'), /multiplexación inválida/i)
+})
+
+test('parses remote telemetry and calculates deltas without exposing raw output', () => {
+  const previous = parseTelemetrySample('os=Linux\ncpu_total=1000\ncpu_idle=800\nmem_total_bytes=10000\nmem_available_bytes=4000\n')
+  const current = parseTelemetrySample('os=Linux\ncpu_total=1100\ncpu_idle=860\nmem_total_bytes=10000\nmem_available_bytes=2500\n')
+  const calculated = calculateTelemetry(previous, current, 1234)
+
+  assert.deepEqual(calculated.metrics, {
+    cpuPercent: 40,
+    memoryPercent: 75,
+    platform: 'linux',
+    updatedAt: 1234,
+  })
+  assert.equal(calculateTelemetry(null, current, 1234).metrics.cpuPercent, null)
+  assert.equal(parseTelemetrySample('not telemetry'), null)
+})
+
+test('accepts a direct CPU sample from a remote macOS host', () => {
+  const sample = parseTelemetrySample('os=Darwin\ncpu_percent=18\nmem_total_bytes=16000\nmem_available_bytes=4000\n')
+  assert.deepEqual(calculateTelemetry(null, sample, 5678).metrics, {
+    cpuPercent: 18,
+    memoryPercent: 75,
+    platform: 'darwin',
+    updatedAt: 5678,
+  })
 })
 
 test('reads concrete aliases and ignores wildcard SSH config entries', () => {

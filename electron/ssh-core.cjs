@@ -13,6 +13,30 @@ const ALLOWED_SSH_ENVIRONMENT_KEYS = [
   'TMPDIR',
 ]
 
+const TELEMETRY_COMMAND = `LC_ALL=C
+os=$(uname -s 2>/dev/null || printf unknown)
+printf 'os=%s\n' "$os"
+case "$os" in
+  Linux)
+    awk '/^cpu / { idle=$5+$6; total=0; for (i=2; i<=NF; i++) total+=$i; printf "cpu_total=%.0f\\ncpu_idle=%.0f\\n", total, idle }' /proc/stat
+    awk '/^MemTotal:/ { total=$2 } /^MemAvailable:/ { available=$2 } /^MemFree:/ { free=$2 } /^Buffers:/ { buffers=$2 } /^Cached:/ { cached=$2 } END { if (!available) available=free+buffers+cached; printf "mem_total_bytes=%.0f\\nmem_available_bytes=%.0f\\n", total*1024, available*1024 }' /proc/meminfo
+    ;;
+  Darwin)
+    top -l 2 -n 0 -s 0.2 2>/dev/null | awk '/^CPU usage:/ { idle=$7; gsub(/%/, "", idle); cpu=100-idle } END { if (cpu >= 0) printf "cpu_percent=%.0f\\n", cpu }'
+    vm_stat 2>/dev/null | awk '
+      /page size of/ { page=$8 }
+      /^Pages free:/ { gsub(/\\./, "", $3); free=$3 }
+      /^Pages active:/ { gsub(/\\./, "", $3); active=$3 }
+      /^Pages inactive:/ { gsub(/\\./, "", $3); inactive=$3 }
+      /^Pages speculative:/ { gsub(/\\./, "", $3); speculative=$3 }
+      /^Pages wired down:/ { gsub(/\\./, "", $4); wired=$4 }
+      /^Pages occupied by compressor:/ { gsub(/\\./, "", $5); compressed=$5 }
+      /^Pages purgeable:/ { gsub(/\\./, "", $3); purgeable=$3 }
+      END { printf "mem_total_bytes=%.0f\\nmem_available_bytes=%.0f\\n", (free+active+inactive+speculative+wired+compressed)*page, (free+inactive+speculative+purgeable)*page }
+    '
+    ;;
+esac`
+
 function isSafeText(value, maxLength = 255) {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength && !/[\r\n\0]/.test(value)
 }
@@ -89,7 +113,24 @@ function processEnvForSsh(environment = process.env) {
   return Object.fromEntries(ALLOWED_SSH_ENVIRONMENT_KEYS.flatMap((key) => environment[key] ? [[key, environment[key]]] : []))
 }
 
-function buildSshArgs(connection) {
+function appendConnectionArgs(args, connection) {
+  if (connection.configFile && connection.sshAlias) {
+    args.push(
+      '-F', connection.configFile,
+      '-o', `HostName=${connection.host}`,
+      '-p', String(connection.port),
+      '-l', connection.username,
+    )
+    if (connection.identityFile) args.push('-i', connection.identityFile, '-o', 'IdentitiesOnly=yes')
+    return connection.sshAlias
+  }
+
+  args.push('-p', String(connection.port))
+  if (connection.identityFile) args.push('-i', connection.identityFile, '-o', 'IdentitiesOnly=yes')
+  return `${connection.username}@${connection.host}`
+}
+
+function buildSshArgs(connection, options = {}) {
   const args = [
     '-tt',
     '-o', 'ConnectTimeout=15',
@@ -99,22 +140,88 @@ function buildSshArgs(connection) {
     '-o', 'UseKeychain=yes',
   ]
 
-  if (connection.configFile && connection.sshAlias) {
+  if (options.controlPath) {
     args.push(
-      '-F', connection.configFile,
-      '-o', `HostName=${connection.host}`,
-      '-p', String(connection.port),
-      '-l', connection.username,
+      '-S', options.controlPath,
+      '-o', 'ControlMaster=auto',
+      '-o', 'ControlPersist=60',
     )
-    if (connection.identityFile) args.push('-i', connection.identityFile, '-o', 'IdentitiesOnly=yes')
-    args.push(connection.sshAlias)
-  } else {
-    args.push('-p', String(connection.port))
-    if (connection.identityFile) args.push('-i', connection.identityFile, '-o', 'IdentitiesOnly=yes')
-    args.push(`${connection.username}@${connection.host}`)
   }
 
+  args.push(appendConnectionArgs(args, connection))
+
   return args
+}
+
+function buildTelemetrySshArgs(connection, controlPath) {
+  if (!isSafeText(controlPath, 512) || !path.isAbsolute(controlPath)) throw new Error('Ruta de multiplexación inválida.')
+
+  const args = [
+    '-T',
+    '-S', controlPath,
+    '-o', 'BatchMode=yes',
+    '-o', 'ConnectTimeout=3',
+    '-o', 'ControlMaster=no',
+    '-o', 'ClearAllForwardings=yes',
+    '-o', 'RemoteCommand=none',
+  ]
+  args.push(appendConnectionArgs(args, connection))
+  args.push(TELEMETRY_COMMAND)
+  return args
+}
+
+function parseTelemetrySample(output) {
+  if (typeof output !== 'string' || output.length > 32_000) return null
+  const values = new Map()
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^([a-z_]+)=([^\r\n]+)$/)
+    if (match) values.set(match[1], match[2])
+  }
+
+  const platform = values.get('os')?.toLowerCase()
+  const cpuTotal = Number(values.get('cpu_total'))
+  const cpuIdle = Number(values.get('cpu_idle'))
+  const directCpuPercent = Number(values.get('cpu_percent'))
+  const memoryTotalBytes = Number(values.get('mem_total_bytes'))
+  const memoryAvailableBytes = Number(values.get('mem_available_bytes'))
+  const hasCpuCounters = Number.isFinite(cpuTotal) && Number.isFinite(cpuIdle) && cpuTotal > 0 && cpuIdle >= 0
+  const hasDirectCpu = Number.isFinite(directCpuPercent) && directCpuPercent >= 0 && directCpuPercent <= 100
+  if (!platform || (!hasCpuCounters && !hasDirectCpu)) return null
+  if (!Number.isFinite(memoryTotalBytes) || !Number.isFinite(memoryAvailableBytes) || memoryTotalBytes <= 0 || memoryAvailableBytes < 0) return null
+
+  return {
+    platform,
+    cpuTotal: hasCpuCounters ? cpuTotal : null,
+    cpuIdle: hasCpuCounters ? cpuIdle : null,
+    directCpuPercent: hasDirectCpu ? directCpuPercent : null,
+    memoryTotalBytes,
+    memoryAvailableBytes,
+  }
+}
+
+function calculateTelemetry(previous, current, updatedAt = Date.now()) {
+  if (!current) return null
+  const memoryUsed = current.memoryTotalBytes - Math.min(current.memoryAvailableBytes, current.memoryTotalBytes)
+  const memoryPercent = Math.min(100, Math.max(0, (memoryUsed / current.memoryTotalBytes) * 100))
+  let cpuPercent = current.directCpuPercent
+
+  if (cpuPercent === null && previous && previous.platform === current.platform && previous.cpuTotal !== null && previous.cpuIdle !== null && current.cpuTotal !== null && current.cpuIdle !== null) {
+    const totalDelta = current.cpuTotal - previous.cpuTotal
+    const idleDelta = current.cpuIdle - previous.cpuIdle
+    if (totalDelta > 0 && idleDelta >= 0) {
+      cpuPercent = Math.min(100, Math.max(0, ((totalDelta - idleDelta) / totalDelta) * 100))
+    }
+  }
+
+  return {
+    sample: current,
+    metrics: {
+      cpuPercent: cpuPercent === null ? null : Math.round(cpuPercent),
+      memoryPercent: Math.round(memoryPercent),
+      platform: current.platform,
+      updatedAt,
+    },
+  }
 }
 
 function validateTerminalInput(payload) {
@@ -188,11 +295,14 @@ class SessionRegistry {
 
 module.exports = {
   SessionRegistry,
+  buildTelemetrySshArgs,
   buildSshArgs,
+  calculateTelemetry,
   expandHome,
   isSafeText,
   isValidSessionId,
   processEnvForSsh,
+  parseTelemetrySample,
   readHostAliases,
   validateConnection,
   validateFilePath,

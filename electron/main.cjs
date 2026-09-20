@@ -3,14 +3,18 @@ const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
 const crypto = require('node:crypto')
-const { execFileSync } = require('node:child_process')
+const { execFile, execFileSync } = require('node:child_process')
+const { promisify } = require('node:util')
 const pty = require('node-pty')
 const {
   SessionRegistry,
+  buildTelemetrySshArgs,
   buildSshArgs,
+  calculateTelemetry,
   expandHome,
   isValidSessionId,
   processEnvForSsh,
+  parseTelemetrySample,
   readHostAliases,
   validateConnection,
   validateFilePath,
@@ -21,7 +25,66 @@ const {
 app.setName('Conexum')
 
 const sessions = new SessionRegistry()
+const sessionConnections = new Map()
+const telemetryCache = new Map()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
+const controlDirectory = path.join(os.tmpdir(), `conexum-ssh-${typeof process.getuid === 'function' ? process.getuid() : 'user'}`)
+const execFileAsync = promisify(execFile)
+
+fs.mkdirSync(controlDirectory, { recursive: true, mode: 0o700 })
+fs.chmodSync(controlDirectory, 0o700)
+
+function connectionCacheKey(connection) {
+  return crypto.createHash('sha256').update(JSON.stringify({
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    sshAlias: connection.sshAlias,
+    configFile: connection.configFile,
+    identityFile: connection.identityFile,
+  })).digest('hex')
+}
+
+function controlPathForConnection(cacheKey) {
+  return path.join(controlDirectory, cacheKey.slice(0, 24))
+}
+
+async function collectTelemetry(context) {
+  const cached = telemetryCache.get(context.cacheKey)
+  const now = Date.now()
+  if (cached?.metrics && now - cached.fetchedAt < 7_500) return cached.metrics
+  if (cached?.inFlight) return cached.inFlight
+
+  const inFlight = (async () => {
+    try {
+      const args = buildTelemetrySshArgs(context.connection, context.controlPath)
+      const { stdout } = await execFileAsync('/usr/bin/ssh', args, {
+        encoding: 'utf8',
+        timeout: 5_000,
+        maxBuffer: 32_000,
+        env: processEnvForSsh(),
+      })
+      const sample = parseTelemetrySample(stdout)
+      const calculated = calculateTelemetry(cached?.sample, sample, Date.now())
+      if (!calculated) return null
+      telemetryCache.set(context.cacheKey, {
+        sample: calculated.sample,
+        metrics: calculated.metrics,
+        fetchedAt: calculated.metrics.updatedAt,
+        inFlight: null,
+      })
+      return calculated.metrics
+    } catch {
+      return null
+    } finally {
+      const current = telemetryCache.get(context.cacheKey)
+      if (current) telemetryCache.set(context.cacheKey, { ...current, inFlight: null })
+    }
+  })()
+
+  telemetryCache.set(context.cacheKey, { ...cached, inFlight })
+  return inFlight
+}
 
 function resolveSshAlias(alias, configFile) {
   const output = execFileSync('/usr/bin/ssh', ['-G', '-F', configFile, alias], {
@@ -96,7 +159,9 @@ function registerSshHandlers() {
     if (sessions.has(connection.sessionId)) throw new Error('La sesión ya existe.')
     const sender = event.sender
 
-    const args = buildSshArgs(connection)
+    const cacheKey = connectionCacheKey(connection)
+    const controlPath = controlPathForConnection(cacheKey)
+    const args = buildSshArgs(connection, { controlPath })
 
     const sshProcess = pty.spawn('/usr/bin/ssh', args, {
       name: 'xterm-256color',
@@ -111,6 +176,7 @@ function registerSshHandlers() {
     })
 
     sessions.add(connection.sessionId, sshProcess)
+    sessionConnections.set(connection.sessionId, { connection, cacheKey, controlPath })
 
     sshProcess.onData((data) => {
       if (!sender.isDestroyed()) {
@@ -120,6 +186,7 @@ function registerSshHandlers() {
 
     sshProcess.onExit(({ exitCode, signal }) => {
       sessions.remove(connection.sessionId)
+      sessionConnections.delete(connection.sessionId)
       if (!sender.isDestroyed()) {
         sender.send('ssh:exit', {
           sessionId: connection.sessionId,
@@ -146,11 +213,20 @@ function registerSshHandlers() {
 
   ipcMain.on('ssh:disconnect', (_event, { sessionId } = {}) => {
     if (!isValidSessionId(sessionId)) return
+    sessionConnections.delete(sessionId)
     sessions.close(sessionId)
+  })
+
+  ipcMain.handle('ssh:telemetry', async (_event, { sessionId } = {}) => {
+    if (!isValidSessionId(sessionId)) return null
+    const context = sessionConnections.get(sessionId)
+    if (!context || !sessions.has(sessionId)) return null
+    return collectTelemetry(context)
   })
 }
 
 function closeAllSessions() {
+  sessionConnections.clear()
   sessions.closeAll()
 }
 

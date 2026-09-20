@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('conexum', {
     write: (sessionId, data) => ipcRenderer.send('ssh:input', { sessionId, data }),
     resize: (sessionId, cols, rows) => ipcRenderer.send('ssh:resize', { sessionId, cols, rows }),
     disconnect: (sessionId) => ipcRenderer.send('ssh:disconnect', { sessionId }),
+    getTelemetry: (sessionId) => ipcRenderer.invoke('ssh:telemetry', { sessionId }),
     onData: (callback) => {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('ssh:data', listener)

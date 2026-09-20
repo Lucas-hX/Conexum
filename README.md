@@ -32,8 +32,11 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 - Pruebas automatizadas para argumentos SSH, validación de IPC y limpieza de sesiones.
 - Empaquetado local reproducible como `Conexum.app`.
 - Validación y paquete de prueba automáticos en GitHub Actions.
+- Directorio remoto independiente por pestaña mediante OSC 7.
+- Métricas discretas de CPU y RAM para la pestaña activa cada 9 segundos.
+- Actualizador local seguro para builds alpha instalados en macOS.
 
-Todavía están pendientes el explorador SFTP, el editor remoto, la telemetría del servidor, la firma y notarización para distribución pública y otras mejoras descritas en el [roadmap](ROADMAP.md).
+Todavía están pendientes el explorador SFTP, el editor remoto, la firma y notarización para distribución pública y otras mejoras descritas en el [roadmap](ROADMAP.md).
 
 ## Requisitos
 
@@ -80,11 +83,42 @@ pnpm run desktop
 
 # Generar una aplicación local sin firma
 pnpm run package:mac
+
+# Actualizar, validar, empaquetar e instalar la última versión de main
+pnpm run update:local
 ```
 
 La conexión SSH real sólo está disponible dentro de Electron. La versión del navegador se utiliza para desarrollar y revisar la interfaz.
 
 El paquete local se genera en `release/mac-arm64/Conexum.app` en Apple Silicon o en el directorio equivalente de Intel. Al no estar firmado, macOS puede pedir una confirmación adicional antes de abrirlo. Los pull requests y cambios en `main` también ejecutan estas comprobaciones en GitHub Actions y producen un ZIP de prueba descargable durante 14 días.
+
+## Actualizaciones durante la etapa alpha
+
+El archivo `scripts/update-conexum.command` automatiza la actualización local desde el código fuente. Se puede abrir desde Finder o ejecutar con:
+
+```bash
+pnpm run update:local
+```
+
+El actualizador:
+
+1. exige una rama `main` limpia;
+2. descarga únicamente el avance lineal más reciente de `origin/main`;
+3. instala las dependencias bloqueadas por `pnpm-lock.yaml`;
+4. ejecuta las pruebas, compila y genera `Conexum.app`;
+5. comprueba que Conexum esté cerrado;
+6. reemplaza `/Applications/Conexum.app` y restaura la copia anterior si la instalación falla;
+7. abre la versión nueva.
+
+Los perfiles permanecen en Application Support y no forman parte del bundle reemplazado. Para utilizar otra ubicación se puede definir `CONEXUM_APP_PATH` con una ruta absoluta terminada en `Conexum.app`.
+
+Este mecanismo está pensado para mantenedores y colaboradores durante la etapa alpha. El actualizador público futuro requerirá firma, notarización y releases versionadas.
+
+## Directorio y métricas remotas
+
+La barra inferior muestra el directorio actual de la pestaña cuando el shell remoto emite OSC 7. Consultá la [configuración opcional para Bash, Zsh y Fish](docs/shell-integration.md).
+
+CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pestaña visible. Conexum reutiliza el socket multiplexado de la sesión SSH, usa un comando remoto fijo de sólo lectura y comparte el resultado entre pestañas del mismo servidor. Nunca inserta comandos en la terminal interactiva. Linux y macOS remotos están soportados; la primera lectura de CPU aparece como `—` hasta disponer de una segunda muestra para calcular el intervalo.
 
 ## Primer uso
 
@@ -102,6 +136,8 @@ El paquete local se genera en `release/mac-arm64/Conexum.app` en Apple Silicon o
 - Las contraseñas, huellas nuevas y advertencias de OpenSSH aparecen directamente en la terminal.
 - El renderer de Electron no tiene acceso directo a Node.js ni al sistema de archivos.
 - Toda comunicación privilegiada pasa por una API de preload pequeña y validada.
+- La telemetría usa un proceso SSH auxiliar en modo no interactivo y no puede solicitar credenciales.
+- El directorio remoto llega por OSC 7; Conexum no analiza la pantalla ni registra teclas.
 
 No incluyas contraseñas, claves privadas ni información sensible en reportes de errores.
 
@@ -153,6 +189,8 @@ Las contribuciones deberían mantener los principios centrales del proyecto: ter
 
 - [Roadmap y backlog propuesto](ROADMAP.md)
 - [Visión y especificación original](idea.md)
+- [Integración OSC 7 para Bash, Zsh y Fish](docs/shell-integration.md)
+- [Historial de cambios](CHANGELOG.md)
 
 ## Estado de distribución
 

@@ -38,6 +38,9 @@ jobs:
       - name: Run tests and production build
         run: pnpm run check
 
+      - name: Validate local updater syntax
+        run: zsh -n scripts/update-conexum.command
+
       - name: Package Conexum.app
         run: pnpm run package:mac
 
