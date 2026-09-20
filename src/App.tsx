@@ -5,9 +5,12 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SftpPanel } from './SftpPanel'
 import {
   ChevronDown,
+  ClipboardCopy,
   Clock3,
   Columns2,
   FileCode2,
+  FileDown,
+  FileUp,
   Folder,
   FolderOpen,
   Home,
@@ -24,14 +27,15 @@ import {
   Server,
   Settings2,
   ShieldCheck,
+  Stethoscope,
   Square,
   SquareTerminal,
   Trash2,
   X,
 } from 'lucide-react'
-import type { ConnectionProfile, RemoteTelemetry } from './conexum'
+import type { ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
 
-type ToolPanel = 'sftp' | 'editor' | null
+type ToolPanel = 'sftp' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 type MainView = 'home' | 'terminal'
 type SplitMode = 0 | 2 | 4
@@ -441,6 +445,33 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
   )
 }
 
+function DiagnosticsModal({ diagnostics, onClose }: { diagnostics: SshDiagnostics; onClose(): void }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    const success = await window.conexum?.ssh.copyDiagnostics(diagnostics.sessionId)
+    setCopied(Boolean(success))
+  }
+  const status = diagnostics.status === 'connected' ? 'Conectado' : diagnostics.status === 'error' ? 'Error' : 'Desconectado'
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="diagnostics-modal">
+        <div className="modal-heading"><div><small>SESIÓN SSH</small><h2>Diagnóstico de conexión</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></div>
+        <dl className="diagnostics-grid">
+          <dt>Host</dt><dd>{diagnostics.host}</dd>
+          <dt>Puerto</dt><dd>{diagnostics.port}</dd>
+          <dt>Usuario</dt><dd>{diagnostics.username}</dd>
+          <dt>Identity file</dt><dd title={diagnostics.identityFile ?? undefined}>{diagnostics.identityFile || 'No especificado'}</dd>
+          <dt>Alias SSH</dt><dd>{diagnostics.sshAlias || 'No especificado'}</dd>
+          <dt>Estado</dt><dd><span className={`diagnostic-state ${diagnostics.status}`}>{status}</span></dd>
+          <dt>Último error</dt><dd>{diagnostics.lastError || 'Ninguno'}</dd>
+        </dl>
+        <div className="diagnostics-note"><ShieldCheck size={15} /><span>El diagnóstico no incluye contraseñas, claves privadas ni contenido de la terminal.</span></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Cerrar</button><button className="primary-button" onClick={() => void copy()}><ClipboardCopy size={14} />{copied ? 'Copiado' : 'Copiar diagnóstico'}</button></div>
+      </section>
+    </div>
+  )
+}
+
 const statusLabels: Record<SessionStatus, string> = {
   idle: 'Sin conexión',
   connecting: 'Conectando…',
@@ -459,7 +490,7 @@ export function App() {
     const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
     return Number.isFinite(stored) ? Math.min(Math.max(stored, 180), 420) : 270
   })
-  const [utilityPanelWidth, setUtilityPanelWidth] = useState(380)
+  const [utilityPanelWidth, setUtilityPanelWidth] = useState(480)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(loadProfiles().map((profile) => profile.group)))
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
   const [query, setQuery] = useState('')
@@ -467,6 +498,9 @@ export function App() {
   const [editingProfile, setEditingProfile] = useState<ConnectionProfile | null>(null)
   const [identityRequiredProfileId, setIdentityRequiredProfileId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+  const [diagnostics, setDiagnostics] = useState<SshDiagnostics | null>(null)
   const [sessions, setSessions] = useState<SshSessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [splitMode, setSplitMode] = useState<SplitMode>(0)
@@ -727,6 +761,56 @@ export function App() {
     setSelectedId(imported[0].id)
   }
 
+  const exportBackup = async () => {
+    setSettingsMessage(null)
+    try {
+      const destination = await window.conexum?.profiles.exportBackup(profiles)
+      if (destination) setSettingsMessage('Respaldo exportado correctamente.')
+    } catch (backupError) {
+      setSettingsMessage(backupError instanceof Error ? backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '') : 'No se pudo exportar el respaldo.')
+    }
+  }
+
+  const importBackup = async () => {
+    setSettingsMessage(null)
+    try {
+      const imported = await window.conexum?.profiles.importBackup()
+      if (!imported?.length) return
+      const signatures = new Set(profiles.map((profile) => `${profile.username}\0${profile.host}\0${profile.port}\0${profile.identityFile ?? ''}`))
+      const ids = new Set(profiles.map((profile) => profile.id))
+      const additions = imported.flatMap((profile) => {
+        const signature = `${profile.username}\0${profile.host}\0${profile.port}\0${profile.identityFile ?? ''}`
+        if (signatures.has(signature)) return []
+        signatures.add(signature)
+        const next = ids.has(profile.id) ? { ...profile, id: crypto.randomUUID() } : profile
+        ids.add(next.id)
+        return [next]
+      })
+      setProfiles((current) => [...current, ...additions])
+      setCollapsedGroups((current) => new Set([...current, ...imported.map((profile) => profile.group)]))
+      setSettingsMessage(`${additions.length} ${additions.length === 1 ? 'conexión importada' : 'conexiones importadas'}.`)
+    } catch (backupError) {
+      setSettingsMessage(backupError instanceof Error ? backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '') : 'No se pudo importar el respaldo.')
+    }
+  }
+
+  const openDiagnostics = async () => {
+    if (!activeSession || !window.conexum) return
+    const result = await window.conexum.ssh.getDiagnostics(activeSession.id)
+    if (result) setDiagnostics(result)
+    setSettingsOpen(false)
+  }
+
+  const openEditorWindow = async (remotePath?: string) => {
+    if (!activeSession || activeSession.status !== 'connected' || !window.conexum) return
+    await window.conexum.editor.openWindow({
+      sessionId: activeSession.id,
+      profileName: activeSession.profile.name,
+      initialDirectory: activeSession.currentDirectory || '/',
+      ...(remotePath ? { remotePath } : {}),
+    })
+  }
+
   const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -777,8 +861,17 @@ export function App() {
           />
           <ToolButton icon={<Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <ToolButton icon={<FolderOpen size={16} />} label="SFTP" active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected'} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
-          <ToolButton icon={<FileCode2 size={16} />} label="Editor" active={activeTool === 'editor'} disabled={!activeSession} onClick={() => { setMainView('terminal'); toggleTool('editor') }} />
-          <button className="icon-button" aria-label="Ajustes"><Settings2 size={17} /></button>
+          <ToolButton icon={<FileCode2 size={16} />} label="Editor" disabled={!activeSession || activeSession.status !== 'connected'} onClick={() => void openEditorWindow()} />
+          <div className="settings-wrapper">
+            <button className="icon-button" aria-label="Ajustes" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
+            {settingsOpen && <div className="settings-menu">
+              <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>Exportar conexiones</strong><small>Sin secretos ni claves privadas</small></span></button>
+              <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>Importar conexiones</strong><small>Desde un respaldo de Conexum</small></span></button>
+              <i />
+              <button disabled={!activeSession} onClick={() => void openDiagnostics()}><Stethoscope size={14} /><span><strong>Diagnóstico</strong><small>{activeSession ? activeSession.profile.name : 'Abrí una sesión primero'}</small></span></button>
+              {settingsMessage && <p>{settingsMessage}</p>}
+            </div>}
+          </div>
         </nav>
       </header>
 
@@ -849,15 +942,9 @@ export function App() {
                 </div>
               })}
             </div>
-            {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(380)} />}
+            {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
             {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
-              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={activeSession.currentDirectory} onClose={() => setActiveTool(null)} />
-            )}
-            {mainView === 'terminal' && activeTool === 'editor' && (
-              <aside className="utility-panel editor-panel">
-                <div className="panel-heading"><div><small>EDITOR — PRÓXIMA ETAPA</small><strong>Archivos remotos</strong></div><button className="icon-button" onClick={() => setActiveTool(null)}><X size={17} /></button></div>
-                <div className="panel-message"><FileCode2 size={32} /><strong>Editor opcional</strong><p>Los archivos se abrirán aquí únicamente cuando los selecciones desde SFTP.</p></div>
-              </aside>
+              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={activeSession.currentDirectory} onClose={() => setActiveTool(null)} onOpenEditor={(remotePath) => void openEditorWindow(remotePath)} />
             )}
           </div>
 
@@ -907,6 +994,7 @@ export function App() {
         onClose={() => { setModalOpen(false); setEditingProfile(null); setIdentityRequiredProfileId(null) }}
         onSave={saveProfile}
       />}
+      {diagnostics && <DiagnosticsModal diagnostics={diagnostics} onClose={() => setDiagnostics(null)} />}
     </main>
   )
 }

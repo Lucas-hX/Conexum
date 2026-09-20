@@ -128,6 +128,44 @@ function buildTransferCommand(direction, localPath, remotePath) {
   throw new Error('Dirección de transferencia inválida.')
 }
 
+function buildReadFileBatch(remotePath, localPath) {
+  const remote = validateRemotePath(remotePath)
+  if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || localPath.length > 4_096 || /[\r\n\0]/.test(localPath)) {
+    throw new Error('La ruta temporal local no es válida.')
+  }
+  return `get ${quoteSftpPath(remote)} ${quoteSftpPath(localPath)}\n`
+}
+
+function permissionsToMode(permissions) {
+  if (typeof permissions !== 'string' || !/^[bcdlps-][rwxStTs-]{9}$/.test(permissions)) return null
+  const triplets = [permissions.slice(1, 4), permissions.slice(4, 7), permissions.slice(7, 10)]
+  const ordinary = triplets.map((triplet) => {
+    let value = 0
+    if (triplet[0] === 'r') value += 4
+    if (triplet[1] === 'w') value += 2
+    if (/[xst]/i.test(triplet[2])) value += 1
+    return value
+  }).join('')
+  const special = (/[sS]/.test(permissions[3]) ? 4 : 0) + (/[sS]/.test(permissions[6]) ? 2 : 0) + (/[tT]/.test(permissions[9]) ? 1 : 0)
+  return special ? `${special}${ordinary}` : ordinary
+}
+
+function buildWriteFileBatch(localPath, remotePath, temporaryRemotePath, permissions) {
+  if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || localPath.length > 4_096 || /[\r\n\0]/.test(localPath)) {
+    throw new Error('La ruta temporal local no es válida.')
+  }
+  const remote = validateRemotePath(remotePath)
+  const temporary = validateRemotePath(temporaryRemotePath)
+  if (path.posix.dirname(remote) !== path.posix.dirname(temporary)) throw new Error('El archivo temporal remoto debe estar en la misma carpeta.')
+  const mode = permissionsToMode(permissions)
+  return [
+    `put ${quoteSftpPath(localPath)} ${quoteSftpPath(temporary)}`,
+    ...(mode ? [`chmod ${mode} ${quoteSftpPath(temporary)}`] : []),
+    `rename ${quoteSftpPath(temporary)} ${quoteSftpPath(remote)}`,
+    '',
+  ].join('\n')
+}
+
 class TransferQueue {
   constructor(run) {
     this.run = run
@@ -174,10 +212,13 @@ module.exports = {
   TransferQueue,
   buildListBatch,
   buildMutationBatch,
+  buildReadFileBatch,
   buildSftpArgs,
   buildTransferCommand,
+  buildWriteFileBatch,
   formatSftpError,
   parseSftpListing,
+  permissionsToMode,
   quoteSftpPath,
   validateRemotePath,
 }

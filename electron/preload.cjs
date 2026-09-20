@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('conexum', {
     resize: (sessionId, cols, rows) => ipcRenderer.send('ssh:resize', { sessionId, cols, rows }),
     disconnect: (sessionId) => ipcRenderer.send('ssh:disconnect', { sessionId }),
     getTelemetry: (sessionId) => ipcRenderer.invoke('ssh:telemetry', { sessionId }),
+    getDiagnostics: (sessionId) => ipcRenderer.invoke('ssh:diagnostics', { sessionId }),
+    copyDiagnostics: (sessionId) => ipcRenderer.invoke('ssh:copy-diagnostics', { sessionId }),
     onData: (callback) => {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('ssh:data', listener)
@@ -22,6 +24,8 @@ contextBridge.exposeInMainWorld('conexum', {
   profiles: {
     chooseIdentityFile: () => ipcRenderer.invoke('profiles:choose-identity'),
     importSshConfig: () => ipcRenderer.invoke('profiles:import-config'),
+    exportBackup: (profiles) => ipcRenderer.invoke('profiles:export-backup', profiles),
+    importBackup: () => ipcRenderer.invoke('profiles:import-backup'),
     forgetIdentityPassphrase: (filePath) => ipcRenderer.invoke('profiles:forget-identity', filePath),
   },
   sftp: {
@@ -38,6 +42,23 @@ contextBridge.exposeInMainWorld('conexum', {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('sftp:transfer-progress', listener)
       return () => ipcRenderer.removeListener('sftp:transfer-progress', listener)
+    },
+    onFileSaved: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('sftp:file-saved', listener)
+      return () => ipcRenderer.removeListener('sftp:file-saved', listener)
+    },
+  },
+  editor: {
+    openWindow: (request) => ipcRenderer.invoke('editor:open-window', request),
+    getContext: () => ipcRenderer.invoke('editor:get-context'),
+    readText: (sessionId, remotePath) => ipcRenderer.invoke('editor:read-text', { sessionId, remotePath }),
+    writeText: (request) => ipcRenderer.invoke('editor:write-text', request),
+    setDirty: (dirty) => ipcRenderer.send('editor:set-dirty', dirty),
+    onOpenFile: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('editor:open-file', listener)
+      return () => ipcRenderer.removeListener('editor:open-file', listener)
     },
   },
 })

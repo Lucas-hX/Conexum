@@ -7,11 +7,14 @@ const {
   TransferQueue,
   buildListBatch,
   buildMutationBatch,
+  buildReadFileBatch,
   buildSftpArgs,
   buildTransferCommand,
+  buildWriteFileBatch,
   formatSftpError,
   parseSftpListing,
   quoteSftpPath,
+  permissionsToMode,
   validateRemotePath,
 } = require('../electron/sftp-core.cjs')
 
@@ -53,6 +56,19 @@ test('builds safe list, mutation, and transfer commands', () => {
   assert.equal(buildMutationBatch('rename', '/srv/old', '/srv/new'), 'rename "/srv/old" "/srv/new"\n')
   assert.equal(buildTransferCommand('upload', '/Users/test/file.txt', '/srv/file.txt'), 'put "/Users/test/file.txt" "/srv/file.txt"')
   assert.throws(() => buildMutationBatch('execute', '/srv/app'), /no permitida/i)
+})
+
+test('builds safe remote editor read and atomic write batches', () => {
+  assert.equal(buildReadFileBatch('/srv/app/file.ts', '/tmp/conexum/file.ts'), 'get "/srv/app/file.ts" "/tmp/conexum/file.ts"\n')
+  assert.equal(permissionsToMode('-rw-r-----'), '640')
+  assert.equal(permissionsToMode('-rwsr-xr-t'), '5755')
+  assert.equal(buildWriteFileBatch('/tmp/conexum/file.ts', '/srv/app/file.ts', '/srv/app/.file.ts.conexum.tmp', '-rw-r-----'), [
+    'put "/tmp/conexum/file.ts" "/srv/app/.file.ts.conexum.tmp"',
+    'chmod 640 "/srv/app/.file.ts.conexum.tmp"',
+    'rename "/srv/app/.file.ts.conexum.tmp" "/srv/app/file.ts"',
+    '',
+  ].join('\n'))
+  assert.throws(() => buildWriteFileBatch('/tmp/file', '/srv/app/file', '/tmp/file', '-rw-r--r--'), /misma carpeta/i)
 })
 
 test('parses and sorts the current macOS OpenSSH long-list format', () => {

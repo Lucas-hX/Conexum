@@ -31,6 +31,8 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - CPU y RAM de la pestaña activa mediante un canal SSH multiplexado de sólo lectura.
 - Actualizador local seguro para builds alpha.
 - Explorador SFTP opcional con navegación y cola de transferencias.
+- Respaldo/importación segura de perfiles y diagnóstico sanitizado de sesiones.
+- Ventana independiente de edición remota con Monaco y árbol SFTP.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 
@@ -104,19 +106,21 @@ El usuario puede transferir archivos de forma confiable y observar el progreso s
 
 Objetivo: revisar y editar archivos remotos con una experiencia similar a un editor liviano de VS Code.
 
-- Evaluar CodeMirror y Monaco según tamaño, rendimiento y facilidad de integración.
-- Abrir archivos desde el explorador SFTP.
-- Pestañas de documentos separadas de las pestañas SSH.
-- Resaltado de sintaxis, números de línea y búsqueda.
-- Guardado remoto mediante la conexión SFTP activa.
-- Detección de modificaciones remotas y conflictos.
-- Confirmación antes de sobrescribir una versión más reciente.
-- Indicadores claros de archivo modificado, guardando y error.
-- Límites seguros para archivos grandes o binarios.
+- [x] Evaluar CodeMirror y Monaco según tamaño, rendimiento y facilidad de integración.
+- [x] Abrir archivos desde el explorador SFTP.
+- [x] Pestañas de documentos separadas de las pestañas SSH.
+- [x] Resaltado de sintaxis, números de línea y búsqueda.
+- [x] Guardado remoto mediante la conexión SFTP activa.
+- [x] Detección de modificaciones remotas y conflictos.
+- [x] Confirmación antes de sobrescribir una versión más reciente.
+- [x] Indicadores claros de archivo modificado, guardando y error.
+- [x] Límites seguros para archivos grandes o binarios.
 
 ### Criterio de salida
 
 El usuario puede abrir, modificar y guardar un archivo de texto remoto sin riesgo de sobrescribir silenciosamente cambios externos.
+
+**Estado:** primera versión funcional implementada para pruebas locales. Autocompletado mediante servidores de lenguaje, Git visual y edición con privilegios elevados quedan fuera de este alcance inicial.
 
 ## Entrega 0.6 — Contexto de agentes
 
