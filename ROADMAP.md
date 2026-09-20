@@ -28,6 +28,7 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Directorio remoto por pestaña mediante integración OSC 7 opcional.
 - CPU y RAM de la pestaña activa mediante un canal SSH multiplexado de sólo lectura.
 - Actualizador local seguro para builds alpha.
+- Explorador SFTP opcional con navegación y cola de transferencias.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 
@@ -80,20 +81,22 @@ La pestaña activa muestra directorio, CPU y RAM con una sobrecarga imperceptibl
 
 Objetivo: navegar y mover archivos sin abandonar la sesión SSH.
 
-- Evaluar el cliente SFTP del sistema frente a una biblioteca mantenida, sin implementar el protocolo desde cero.
-- Reutilizar perfil, clave, host, puerto y configuración SSH existentes.
-- Navegar por el sistema de archivos remoto.
-- Mostrar archivos ocultos de forma opcional.
-- Subir y descargar archivos.
-- Crear carpetas, mover, renombrar y eliminar con confirmación.
-- Incorporar arrastrar y soltar.
-- Mostrar una cola de transferencias compacta con progreso y cancelación.
+- [x] Utilizar el cliente SFTP de macOS sin implementar el protocolo desde cero.
+- [x] Reutilizar perfil, clave, host, puerto y configuración SSH existentes.
+- [x] Navegar por el sistema de archivos remoto.
+- [x] Mostrar archivos ocultos de forma opcional.
+- [x] Subir y descargar archivos.
+- [x] Crear carpetas, mover, renombrar y eliminar con confirmación.
+- [x] Incorporar arrastrar y soltar.
+- [x] Mostrar una cola de transferencias compacta con progreso y cancelación.
 - Reintentar transferencias interrumpidas cuando sea seguro.
-- Permitir que el panel se abra, cierre y redimensione sin afectar la terminal.
+- [x] Permitir que el panel se abra, cierre y redimensione sin afectar la terminal.
 
 ### Criterio de salida
 
 El usuario puede transferir archivos de forma confiable y observar el progreso sin bloquear una sesión interactiva.
+
+**Estado:** primera versión implementada. El reintento asistido de transferencias interrumpidas permanece como mejora incremental.
 
 ## Entrega 0.5 — Editor remoto
 

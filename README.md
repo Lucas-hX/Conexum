@@ -35,8 +35,9 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 - Directorio remoto independiente por pestaña mediante OSC 7.
 - Métricas discretas de CPU y RAM para la pestaña activa cada 9 segundos.
 - Actualizador local seguro para builds alpha instalados en macOS.
+- Explorador SFTP acoplable con navegación, transferencias y operaciones seguras.
 
-Todavía están pendientes el explorador SFTP, el editor remoto, la firma y notarización para distribución pública y otras mejoras descritas en el [roadmap](ROADMAP.md).
+Todavía están pendientes el editor remoto, la firma y notarización para distribución pública y otras mejoras descritas en el [roadmap](ROADMAP.md).
 
 ## Requisitos
 
@@ -120,6 +121,26 @@ La barra inferior muestra el directorio actual de la pestaña cuando el shell re
 
 CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pestaña visible. Conexum reutiliza el socket multiplexado de la sesión SSH, usa un comando remoto fijo de sólo lectura y comparte el resultado entre pestañas del mismo servidor. Nunca inserta comandos en la terminal interactiva. Linux y macOS remotos están soportados; la primera lectura de CPU aparece como `—` hasta disponer de una segunda muestra para calcular el intervalo.
 
+## Explorador SFTP
+
+Con una sesión activa, presioná **SFTP** para abrir el panel lateral. El explorador comienza en el directorio informado por OSC 7 o, si todavía no existe esa información, en el home remoto.
+
+Desde el panel se puede:
+
+- navegar con doble clic y escribir una ruta absoluta;
+- mostrar u ocultar archivos ocultos;
+- crear carpetas;
+- renombrar o mover archivos y carpetas;
+- eliminar archivos o carpetas vacías con confirmación;
+- subir archivos mediante el selector o arrastrando desde Finder;
+- descargar archivos eligiendo su destino local;
+- observar y cancelar transferencias desde una cola compacta;
+- cerrar o redimensionar el panel sin interrumpir la terminal.
+
+Conexum utiliza `/usr/bin/sftp` y el socket multiplexado de la sesión existente. No guarda credenciales ni implementa el protocolo SFTP. Los archivos locales sólo pueden transferirse después de seleccionarlos explícitamente mediante Finder, el diálogo de macOS o arrastrar y soltar.
+
+Al cancelar una transferencia, el servidor o la carpeta local pueden conservar un archivo parcial. Conexum lo deja visible para que el usuario decida si desea inspeccionarlo, reanudar manualmente o eliminarlo; nunca borra archivos automáticamente después de una interrupción.
+
 ## Primer uso
 
 1. Ejecutá `pnpm run desktop`.
@@ -138,6 +159,8 @@ CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pesta
 - Toda comunicación privilegiada pasa por una API de preload pequeña y validada.
 - La telemetría usa un proceso SSH auxiliar en modo no interactivo y no puede solicitar credenciales.
 - El directorio remoto llega por OSC 7; Conexum no analiza la pantalla ni registra teclas.
+- SFTP funciona en un proceso separado con `BatchMode=yes`, sin reenviar puertos ni solicitar credenciales nuevas.
+- Eliminar contenido remoto siempre requiere confirmación y las carpetas sólo se eliminan cuando están vacías.
 
 No incluyas contraseñas, claves privadas ni información sensible en reportes de errores.
 

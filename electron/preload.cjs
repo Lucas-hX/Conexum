@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('conexum', {
   platform: 'desktop',
@@ -23,5 +23,20 @@ contextBridge.exposeInMainWorld('conexum', {
     chooseIdentityFile: () => ipcRenderer.invoke('profiles:choose-identity'),
     importSshConfig: () => ipcRenderer.invoke('profiles:import-config'),
     forgetIdentityPassphrase: (filePath) => ipcRenderer.invoke('profiles:forget-identity', filePath),
+  },
+  sftp: {
+    list: (sessionId, remotePath) => ipcRenderer.invoke('sftp:list', { sessionId, remotePath }),
+    mutate: (sessionId, operation, sourcePath, destinationPath) => ipcRenderer.invoke('sftp:mutate', { sessionId, operation, sourcePath, destinationPath }),
+    chooseUpload: () => ipcRenderer.invoke('sftp:choose-upload'),
+    grantDroppedUpload: (file) => ipcRenderer.invoke('sftp:grant-dropped-upload', webUtils.getPathForFile(file)),
+    chooseDownload: (suggestedName) => ipcRenderer.invoke('sftp:choose-download', suggestedName),
+    transfers: (sessionId) => ipcRenderer.invoke('sftp:transfers', { sessionId }),
+    enqueueTransfer: (request) => ipcRenderer.invoke('sftp:enqueue-transfer', request),
+    cancelTransfer: (transferId) => ipcRenderer.send('sftp:cancel-transfer', { transferId }),
+    onTransferProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('sftp:transfer-progress', listener)
+      return () => ipcRenderer.removeListener('sftp:transfer-progress', listener)
+    },
   },
 })

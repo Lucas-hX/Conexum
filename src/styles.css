@@ -507,7 +507,7 @@ button {
 }
 
 .content-row.panel-open {
-  grid-template-columns: minmax(480px, 1fr) 320px;
+  grid-template-columns: minmax(480px, 1fr) 5px var(--utility-width, 380px);
 }
 
 .primary-view {
@@ -820,6 +820,257 @@ button {
   background: #141b22;
   border-left: 1px solid #2a3540;
   box-shadow: -12px 0 30px #00000024;
+}
+
+.utility-resizer {
+  width: 5px;
+  min-width: 5px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid #252f38;
+  border-right: 1px solid #0b1015;
+  background: #182028;
+  cursor: col-resize;
+}
+
+.utility-resizer:hover {
+  background: #2b6f9e;
+}
+
+.sftp-panel {
+  position: relative;
+  grid-template-rows: auto auto auto auto minmax(120px, 1fr) auto;
+  overflow: hidden;
+}
+
+.sftp-pathbar {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  gap: 5px;
+  padding: 9px 10px 7px;
+}
+
+.sftp-pathbar input,
+.sftp-pathbar button,
+.sftp-actions button,
+.sftp-error button,
+.transfer-row button {
+  border: 1px solid #303c47;
+  border-radius: 5px;
+  color: #aeb9c4;
+  background: #1a222a;
+}
+
+.sftp-pathbar button,
+.sftp-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.sftp-pathbar button:disabled,
+.sftp-actions button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+.sftp-pathbar input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  outline: none;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+}
+
+.sftp-pathbar input:focus {
+  border-color: #377cac;
+}
+
+.sftp-actions {
+  display: grid;
+  grid-template-columns: auto auto 30px 30px 30px 1fr 30px;
+  gap: 5px;
+  padding: 0 10px 8px;
+  border-bottom: 1px solid #27323c;
+}
+
+.sftp-actions button {
+  height: 28px;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.sftp-actions button.danger:not(:disabled) {
+  color: #d98a8f;
+}
+
+.sftp-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  color: #d79a9e;
+  background: #361b2080;
+  border-bottom: 1px solid #5c2e34;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.sftp-error button,
+.transfer-row button {
+  padding: 2px;
+}
+
+.sftp-list {
+  min-height: 0;
+  overflow: auto;
+  padding: 5px 7px;
+}
+
+.sftp-list > button {
+  width: 100%;
+  height: 32px;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  color: #aebac5;
+  background: transparent;
+  text-align: left;
+}
+
+.sftp-list > button:hover {
+  background: #ffffff08;
+}
+
+.sftp-list > button.selected {
+  color: #dce7f0;
+  background: #17354a;
+}
+
+.sftp-list > button svg {
+  color: #55a9e2;
+}
+
+.sftp-list > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.sftp-list > button small {
+  color: #73818c;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+}
+
+.sftp-empty {
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #647481;
+  font-size: 11px;
+}
+
+.sftp-dropzone {
+  position: absolute;
+  inset: 58px 8px 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed #4ca9e6;
+  border-radius: 9px;
+  color: #d6e9f7;
+  background: #102536ee;
+  pointer-events: none;
+}
+
+.sftp-dropzone span {
+  max-width: 85%;
+  overflow: hidden;
+  color: #7da9c6;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-queue {
+  max-height: 190px;
+  overflow: auto;
+  padding: 7px 9px 9px;
+  border-top: 1px solid #2a3540;
+  background: #11181f;
+}
+
+.transfer-heading {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: #697986;
+  font-size: 8px;
+  letter-spacing: .1em;
+}
+
+.transfer-heading small {
+  font-size: 8px;
+  letter-spacing: normal;
+}
+
+.transfer-row {
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: 14px minmax(70px, 1fr) minmax(45px, .6fr) auto 18px;
+  align-items: center;
+  gap: 6px;
+  color: #9dabb6;
+  font-size: 9px;
+}
+
+.transfer-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-row.completed { color: #75b888; }
+.transfer-row.error { color: #d47f85; }
+.transfer-row.canceled { color: #737e87; }
+
+.transfer-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #2b3741;
+}
+
+.transfer-progress i {
+  height: 100%;
+  display: block;
+  background: #399fe2;
+  transition: width .15s ease;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .panel-heading {
@@ -1282,12 +1533,13 @@ button {
   .workspace { grid-template-columns: min(var(--sidebar-width, 230px), 230px) 5px minmax(0, 1fr); }
   .tool-button span:last-child { display: none; }
   .tool-button { padding: 0 8px; }
-  .content-row.panel-open { grid-template-columns: minmax(420px, 1fr) 280px; }
+  .content-row.panel-open { grid-template-columns: minmax(420px, 1fr) 5px min(320px, var(--utility-width, 320px)); }
 }
 
 @media (max-width: 800px) {
   .workspace { grid-template-columns: 200px 5px minmax(0, 1fr); }
   .content-row.panel-open { grid-template-columns: 1fr; }
-  .utility-panel { display: none; }
+  .utility-panel,
+  .utility-resizer { display: none; }
   .session-tab { min-width: 125px; }
 }
