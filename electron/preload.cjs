@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('conexum', {
       return () => ipcRenderer.removeListener('ssh:exit', listener)
     },
   },
+  local: {
+    getMachineInfo: () => ipcRenderer.invoke('local:machine-info'),
+    getCurrentDirectory: (sessionId) => ipcRenderer.invoke('local:current-directory', { sessionId }),
+  },
   profiles: {
     chooseIdentityFile: () => ipcRenderer.invoke('profiles:choose-identity'),
     importSshConfig: () => ipcRenderer.invoke('profiles:import-config'),

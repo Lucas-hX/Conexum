@@ -6,7 +6,6 @@ import { SftpPanel } from './SftpPanel'
 import {
   ChevronDown,
   ClipboardCopy,
-  Clock3,
   Columns2,
   FileCode2,
   FileDown,
@@ -16,6 +15,8 @@ import {
   Home,
   Import,
   KeyRound,
+  LayoutGrid,
+  Monitor,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
@@ -63,6 +64,16 @@ const SIDEBAR_WIDTH_KEY = 'conexum.sidebarWidth.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const BRAND_ICON = './brand/conexum-icon.png'
 const BRAND_BANNER = './brand/conexum-welcome-banner.png'
+const LOCAL_PROFILE_ID = 'conexum-local'
+const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
+  id: LOCAL_PROFILE_ID,
+  kind: 'local',
+  name: 'Terminal local',
+  group: 'Esta Mac',
+  host: 'localhost',
+  port: 0,
+  username: '',
+}
 
 function parseOsc7Directory(value: string) {
   if (!value || value.length > 4_096 || /[\r\n\0]/.test(value)) return null
@@ -146,13 +157,7 @@ const TerminalView = forwardRef<TerminalHandle, {
     terminalRef.current = terminal
     fitRef.current = fitAddon
 
-    terminal.writeln('\x1b[1;34mConexum\x1b[0m — gestor visual de conexiones SSH')
-    terminal.writeln('')
-    terminal.writeln('Creá o seleccioná una conexión y presioná \x1b[1mConectar\x1b[0m.')
-    terminal.writeln('Conexum utilizará \x1b[1m/usr/bin/ssh\x1b[0m, el OpenSSH incluido en macOS.')
-    terminal.writeln('Las contraseñas y huellas se gestionan directamente dentro de esta terminal.')
-    terminal.writeln('')
-    terminal.write('\x1b[90mEsperando una conexión…\x1b[0m')
+    terminal.write('\x1b[90m[Conexum] Iniciando terminal…\x1b[0m')
 
     const inputDisposable = terminal.onData((data) => {
       if (sessionIdRef.current) window.conexum?.ssh.write(sessionIdRef.current, data)
@@ -173,9 +178,9 @@ const TerminalView = forwardRef<TerminalHandle, {
     const removeExitListener = window.conexum?.ssh.onExit(({ sessionId, exitCode }) => {
       if (sessionId !== sessionIdRef.current) return
       sessionIdRef.current = null
-      terminal.writeln(`\r\n\x1b[90m[Conexum] La sesión SSH finalizó con código ${exitCode}.\x1b[0m`)
+      terminal.writeln(`\r\n\x1b[90m[Conexum] La sesión ${activeProfileRef.current?.kind === 'local' ? 'local' : 'SSH'} finalizó con código ${exitCode}.\x1b[0m`)
       onStatusChange('disconnected')
-      if (authenticationFailedRef.current && activeProfileRef.current && !activeProfileRef.current.identityFile) {
+      if (authenticationFailedRef.current && activeProfileRef.current?.kind !== 'local' && activeProfileRef.current && !activeProfileRef.current.identityFile) {
         onIdentityNeeded(activeProfileRef.current)
       }
     })
@@ -205,7 +210,7 @@ const TerminalView = forwardRef<TerminalHandle, {
       if (!terminal || !fitAddon) return
 
       if (!window.conexum) {
-        terminal.writeln('\r\n\x1b[31m[Conexum] SSH real sólo está disponible dentro de la aplicación de escritorio.\x1b[0m')
+        terminal.writeln('\r\n\x1b[31m[Conexum] La terminal real sólo está disponible en la aplicación de escritorio.\x1b[0m')
         terminal.writeln('Ejecutá: pnpm run desktop')
         onStatusChange('error')
         return
@@ -216,10 +221,10 @@ const TerminalView = forwardRef<TerminalHandle, {
       authenticationFailedRef.current = false
       if (options.preserveHistory) {
         terminal.writeln('')
-        terminal.writeln(`\x1b[90m[Conexum] Reconectando con ${profile.username}@${profile.host}:${profile.port}…\x1b[0m`)
+        terminal.writeln(`\x1b[90m[Conexum] Reabriendo ${profile.kind === 'local' ? 'la terminal local' : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
       } else {
         terminal.reset()
-        terminal.writeln(`\x1b[90m[Conexum] Abriendo /usr/bin/ssh hacia ${profile.username}@${profile.host}:${profile.port}…\x1b[0m`)
+        terminal.writeln(`\x1b[90m[Conexum] Abriendo ${profile.kind === 'local' ? 'la terminal de esta Mac' : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
       }
       onStatusChange('connecting')
 
@@ -235,7 +240,7 @@ const TerminalView = forwardRef<TerminalHandle, {
         terminal.focus()
       } catch (error) {
         sessionIdRef.current = null
-        const message = error instanceof Error ? error.message : 'No se pudo iniciar OpenSSH.'
+        const message = error instanceof Error ? error.message : 'No se pudo iniciar la terminal.'
         terminal.writeln(`\r\n\x1b[31m[Conexum] ${message}\x1b[0m`)
         onStatusChange('error')
         if (/archivo de identidad/i.test(message)) onIdentityNeeded(profile)
@@ -251,7 +256,7 @@ const TerminalView = forwardRef<TerminalHandle, {
     },
   }), [onIdentityNeeded, onStatusChange, sessionId])
 
-  return <div className="terminal-host" ref={hostRef} aria-label="Terminal SSH" />
+  return <div className="terminal-host" ref={hostRef} aria-label="Terminal" />
 })
 
 function ManagedTerminalSession({ session, onHandle, onStatusChange, onDirectoryChange, onIdentityNeeded }: {
@@ -277,94 +282,65 @@ function ManagedTerminalSession({ session, onHandle, onStatusChange, onDirectory
   return <TerminalView ref={terminalRef} sessionId={session.id} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
 }
 
-function ToolButton({ label, icon, active, disabled, onClick }: {
+function ToolButton({ label, icon, active, disabled, accent, onClick }: {
   label: string
   icon: ReactNode
   active?: boolean
   disabled?: boolean
+  accent?: boolean
   onClick?: () => void
 }) {
   return (
-    <button className={`tool-button ${active ? 'active' : ''}`} disabled={disabled} onClick={onClick}>
-      <span className="tool-icon" aria-hidden="true">{icon}</span><span>{label}</span>
+    <button className={`tool-button ${active ? 'active' : ''} ${accent ? 'accent' : ''}`} disabled={disabled} onClick={onClick} aria-label={label} title={label}>
+      <span className="tool-icon" aria-hidden="true">{icon}</span>
     </button>
   )
 }
 
-function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect, onNew, onImport }: {
+function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect }: {
   profiles: ConnectionProfile[]
   recentIds: string[]
   selectedId: string | null
   onSelect(profile: ConnectionProfile): void
   onConnect(profile: ConnectionProfile): void
-  onNew(): void
-  onImport(): void
 }) {
   const recentProfiles = recentIds
     .map((id) => profiles.find((profile) => profile.id === id))
     .filter((profile): profile is ConnectionProfile => Boolean(profile))
-    .slice(0, 6)
-  const featuredProfiles = recentProfiles.length ? recentProfiles : profiles.slice(0, 6)
+  const featuredProfiles = [
+    ...profiles.filter((profile) => profile.kind === 'local'),
+    ...recentProfiles.filter((profile) => profile.kind !== 'local'),
+    ...profiles.filter((profile) => profile.kind !== 'local' && !recentIds.includes(profile.id)),
+  ].slice(0, 4)
 
   return (
     <div className="welcome-home">
-      <section className="welcome-banner" style={{ backgroundImage: `linear-gradient(90deg, #0b1119 0%, #0b1119e8 42%, #0b111966 72%), url(${BRAND_BANNER})` }}>
+      <section className="welcome-banner" style={{ backgroundImage: `linear-gradient(90deg, #0b1119 0%, #0b1119ec 42%, #0b111966 76%), url(${BRAND_BANNER})` }}>
         <div className="welcome-copy">
           <div className="welcome-brand"><img src={BRAND_ICON} alt="" /><span>Conexum</span></div>
-          <h1>A simple SSH connection manager.</h1>
-          <p>OpenSSH de macOS, organizado en un solo lugar.</p>
-          <div className="welcome-actions">
-            <button className="primary-button" onClick={onNew}><Plus size={16} />Nueva conexión</button>
-            <button className="secondary-button" onClick={onImport}><Import size={16} />Importar SSH config</button>
-          </div>
+          <p>Terminal local y conexiones SSH, en un solo lugar.</p>
         </div>
       </section>
 
       <div className="welcome-content">
-        {profiles.length === 0 ? (
-          <section className="home-empty">
-            <Server size={26} />
-            <h2>Tu lista de conexiones está vacía</h2>
-            <p>Creá un perfil o importá tu archivo SSH config para comenzar.</p>
-          </section>
-        ) : (
-          <>
-            <section className="home-section">
-              <div className="home-section-heading">
-                <div><Clock3 size={15} /><h2>{recentProfiles.length ? 'Conexiones recientes' : 'Listas para conectar'}</h2></div>
-                <span>Doble clic para abrir</span>
-              </div>
-              <div className="server-shortcuts">
-                {featuredProfiles.map((profile) => (
-                  <button
-                    key={profile.id}
-                    className={`server-shortcut ${selectedId === profile.id ? 'selected' : ''}`}
-                    onClick={() => onSelect(profile)}
-                    onDoubleClick={() => onConnect(profile)}
-                  >
-                    <span className="shortcut-icon"><Server size={18} /></span>
-                    <span className="shortcut-copy"><strong>{profile.name}</strong><small>{profile.username}@{profile.host}:{profile.port}</small></span>
-                    {profile.identityFile || profile.sshAlias ? <KeyRound size={14} className="shortcut-key" /> : null}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="home-section all-connections">
-              <div className="home-section-heading"><div><Folder size={15} /><h2>Todos los servidores</h2></div><span>{profiles.length} {profiles.length === 1 ? 'conexión' : 'conexiones'}</span></div>
-              <div className="home-server-list">
-                {profiles.map((profile) => (
-                  <button key={profile.id} onClick={() => onSelect(profile)} onDoubleClick={() => onConnect(profile)}>
-                    <span><Server size={15} /><strong>{profile.name}</strong></span>
-                    <small>{profile.group}</small>
-                    <code>{profile.username}@{profile.host}</code>
-                    <Play size={13} />
-                  </button>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
+        <section className="home-section">
+          <div className="home-section-heading"><div><h2>Acceso rápido</h2></div><span>Doble clic para abrir</span></div>
+          <div className="server-shortcuts">
+            {featuredProfiles.map((profile) => (
+              <button
+                key={profile.id}
+                className={`server-shortcut ${selectedId === profile.id ? 'selected' : ''}`}
+                onClick={() => onSelect(profile)}
+                onDoubleClick={() => onConnect(profile)}
+                title={`Doble clic para abrir ${profile.name}`}
+              >
+                <span className="shortcut-icon">{profile.kind === 'local' ? <Monitor size={17} /> : <Server size={17} />}</span>
+                <span className="shortcut-copy"><strong>{profile.name}</strong><small>{profile.kind === 'local' ? profile.group : `${profile.username}@${profile.host}`}</small></span>
+                {profile.identityFile || profile.sshAlias ? <KeyRound size={13} className="shortcut-key" /> : null}
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   )
@@ -482,7 +458,9 @@ const statusLabels: Record<SessionStatus, string> = {
 
 export function App() {
   const [profiles, setProfiles] = useState<ConnectionProfile[]>(loadProfiles)
-  const [selectedId, setSelectedId] = useState<string | null>(() => loadProfiles()[0]?.id ?? null)
+  const [localProfile, setLocalProfile] = useState<ConnectionProfile>(DEFAULT_LOCAL_PROFILE)
+  const [localHomeDirectory, setLocalHomeDirectory] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(() => loadProfiles()[0]?.id ?? LOCAL_PROFILE_ID)
   const [mainView, setMainView] = useState<MainView>('home')
   const [recentIds, setRecentIds] = useState<string[]>(loadRecentConnections)
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -492,6 +470,7 @@ export function App() {
   })
   const [utilityPanelWidth, setUtilityPanelWidth] = useState(480)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(loadProfiles().map((profile) => profile.group)))
+  const [localGroupCollapsed, setLocalGroupCollapsed] = useState(false)
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -506,7 +485,7 @@ export function App() {
   const [splitMode, setSplitMode] = useState<SplitMode>(0)
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map())
 
-  const selected = profiles.find((profile) => profile.id === selectedId) ?? null
+  const selected = selectedId === LOCAL_PROFILE_ID ? localProfile : profiles.find((profile) => profile.id === selectedId) ?? null
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
   const activeSessionCount = sessions.filter((session) => session.status === 'connected' || session.status === 'connecting').length
   const splitSessions = useMemo(() => {
@@ -524,13 +503,23 @@ export function App() {
     }
     return [...groups.entries()]
   }, [profiles, query])
+  const showLocalProfile = `${localProfile.name} ${localProfile.group}`.toLowerCase().includes(query.toLowerCase())
+
+  useEffect(() => {
+    void window.conexum?.local.getMachineInfo().then((machine) => {
+      const next = { ...DEFAULT_LOCAL_PROFILE, group: machine.name, username: machine.username }
+      setLocalProfile(next)
+      setLocalHomeDirectory(machine.homeDirectory)
+      setSessions((current) => current.map((session) => session.profile.id === LOCAL_PROFILE_ID ? { ...session, profile: next } : session))
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles))
   }, [profiles])
 
   useEffect(() => {
-    const validIds = new Set(profiles.map((profile) => profile.id))
+    const validIds = new Set([LOCAL_PROFILE_ID, ...profiles.map((profile) => profile.id)])
     setRecentIds((current) => {
       const next = current.filter((id) => validIds.has(id)).slice(0, 8)
       return next
@@ -558,7 +547,7 @@ export function App() {
 
   useEffect(() => {
     const api = window.conexum
-    if (mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || !api) return
+    if (mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || activeSession.profile.kind === 'local' || !api) return
     let disposed = false
 
     const refreshTelemetry = async () => {
@@ -581,8 +570,25 @@ export function App() {
   }, [activeSessionId, activeSession?.status, mainView])
 
   useEffect(() => {
-    if (activeTool && activeSession?.status !== 'connected') setActiveTool(null)
-  }, [activeSession?.status, activeTool])
+    if (mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || activeSession.profile.kind !== 'local') return
+    const api = window.conexum?.local
+    if (!api) return
+    let disposed = false
+    const refreshDirectory = async () => {
+      const directory = await api.getCurrentDirectory(activeSessionId)
+      if (disposed || !directory) return
+      setSessions((current) => current.map((session) => session.id === activeSessionId && session.currentDirectory !== directory
+        ? { ...session, currentDirectory: directory }
+        : session))
+    }
+    void refreshDirectory()
+    const timer = window.setInterval(() => void refreshDirectory(), 2_000)
+    return () => { disposed = true; window.clearInterval(timer) }
+  }, [activeSessionId, activeSession?.status, mainView])
+
+  useEffect(() => {
+    if (activeTool && (activeSession?.status !== 'connected' || activeSession.profile.kind === 'local')) setActiveTool(null)
+  }, [activeSession?.profile.kind, activeSession?.status, activeTool])
 
   useEffect(() => {
     if (splitMode && sessions.length < 2) setSplitMode(0)
@@ -650,7 +656,7 @@ export function App() {
       id: sessionId,
       profile,
       status: 'connecting',
-      currentDirectory: null,
+      currentDirectory: profile.kind === 'local' ? localHomeDirectory || null : null,
       telemetry: null,
       telemetryStatus: 'idle',
     }])
@@ -673,7 +679,7 @@ export function App() {
   const closeSessionTab = (session: SshSessionTab) => {
     const active = session.status === 'connected' || session.status === 'connecting'
     const message = active
-      ? `¿Cerrar la pestaña de ${session.profile.name} y finalizar esta conexión activa?`
+      ? `¿Cerrar la pestaña de ${session.profile.name} y finalizar esta sesión activa?`
       : `¿Cerrar la pestaña de ${session.profile.name}?`
     if (!window.confirm(message)) return
     if (active) terminalRefs.current.get(session.id)?.disconnect()
@@ -728,7 +734,7 @@ export function App() {
     if (!window.confirm(`¿Eliminar el grupo “${group}” y sus ${groupProfiles.length} conexiones?${detail}`)) return
     setProfiles((current) => {
       const remaining = current.filter((profile) => profile.group !== group)
-      setSelectedId((selectedProfileId) => remaining.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : remaining[0]?.id ?? null)
+      setSelectedId((selectedProfileId) => selectedProfileId === LOCAL_PROFILE_ID || remaining.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : remaining[0]?.id ?? LOCAL_PROFILE_ID)
       return remaining
     })
     setCollapsedGroups((current) => {
@@ -777,7 +783,7 @@ export function App() {
       const imported = await window.conexum?.profiles.importBackup()
       if (!imported?.length) return
       const signatures = new Set(profiles.map((profile) => `${profile.username}\0${profile.host}\0${profile.port}\0${profile.identityFile ?? ''}`))
-      const ids = new Set(profiles.map((profile) => profile.id))
+      const ids = new Set([LOCAL_PROFILE_ID, ...profiles.map((profile) => profile.id)])
       const additions = imported.flatMap((profile) => {
         const signature = `${profile.username}\0${profile.host}\0${profile.port}\0${profile.identityFile ?? ''}`
         if (signatures.has(signature)) return []
@@ -802,11 +808,11 @@ export function App() {
   }
 
   const openEditorWindow = async (remotePath?: string) => {
-    if (!activeSession || activeSession.status !== 'connected' || !window.conexum) return
+    if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local' || !window.conexum) return
     await window.conexum.editor.openWindow({
       sessionId: activeSession.id,
       profileName: activeSession.profile.name,
-      initialDirectory: activeSession.currentDirectory || '/',
+      initialDirectory: remotePath ? remotePath.slice(0, remotePath.lastIndexOf('/')) || '/' : activeSession.currentDirectory,
       ...(remotePath ? { remotePath } : {}),
     })
   }
@@ -849,7 +855,6 @@ export function App() {
   return (
     <main className="app-shell">
       <header className="titlebar">
-        <div className="traffic-lights" aria-hidden="true"><i className="red" /><i className="yellow" /><i className="green" /></div>
         <div className="brand"><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></div>
         <nav className="toolbar" aria-label="Herramientas principales">
           <ToolButton icon={<Plus size={16} />} label="Nueva conexión" onClick={openNewProfile} />
@@ -857,18 +862,20 @@ export function App() {
             icon={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? <Square size={14} /> : <Play size={15} />}
             label={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? 'Desconectar' : mainView === 'terminal' && activeSession ? 'Reconectar' : 'Conectar'}
             disabled={mainView === 'terminal' ? !activeSession : !selected}
+            accent
             onClick={connectOrDisconnect}
           />
-          <ToolButton icon={<Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
-          <ToolButton icon={<FolderOpen size={16} />} label="SFTP" active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected'} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
-          <ToolButton icon={<FileCode2 size={16} />} label="Editor" disabled={!activeSession || activeSession.status !== 'connected'} onClick={() => void openEditorWindow()} />
+          <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
+          <span className="toolbar-separator" aria-hidden="true" />
+          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? 'SFTP sólo para sesiones SSH' : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
+          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? 'Editor remoto sólo para sesiones SSH' : 'Editor'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={() => void openEditorWindow()} />
           <div className="settings-wrapper">
-            <button className="icon-button" aria-label="Ajustes" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
+            <button className="icon-button" aria-label="Ajustes" title="Ajustes" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>Exportar conexiones</strong><small>Sin secretos ni claves privadas</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>Importar conexiones</strong><small>Desde un respaldo de Conexum</small></span></button>
               <i />
-              <button disabled={!activeSession} onClick={() => void openDiagnostics()}><Stethoscope size={14} /><span><strong>Diagnóstico</strong><small>{activeSession ? activeSession.profile.name : 'Abrí una sesión primero'}</small></span></button>
+              <button disabled={!activeSession || activeSession.profile.kind === 'local'} onClick={() => void openDiagnostics()}><Stethoscope size={14} /><span><strong>Diagnóstico SSH</strong><small>{activeSession?.profile.kind === 'local' ? 'No aplica a la terminal local' : activeSession ? activeSession.profile.name : 'Abrí una sesión primero'}</small></span></button>
               {settingsMessage && <p>{settingsMessage}</p>}
             </div>}
           </div>
@@ -879,11 +886,18 @@ export function App() {
         {sidebarOpen && (
           <aside className="sidebar">
             <div className="sidebar-heading"><span>CONEXIONES</span><button className="icon-button subtle" onClick={() => setSidebarOpen(false)} aria-label="Ocultar conexiones"><PanelLeftClose size={17} /></button></div>
-            <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar conexiones…" /><kbd>⌘ K</kbd></label>
+            <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar conexiones…" /></label>
             <div className="connection-tree">
-              {groupedProfiles.length === 0 ? (
-                <div className="empty-connections"><Server size={28} /><strong>No hay conexiones</strong><p>Agregá tu primer servidor SSH.</p></div>
-              ) : groupedProfiles.map(([group, connections]) => (
+              {showLocalProfile && <div className="connection-group local-group">
+                <button className="group-title" aria-expanded={!localGroupCollapsed} onClick={() => setLocalGroupCollapsed((current) => !current)}>
+                  <ChevronDown size={13} className={`folder-chevron ${localGroupCollapsed ? 'collapsed' : ''}`} /><Monitor size={14} /><span>{localProfile.group}</span><small>1</small>
+                </button>
+                {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title="Doble clic para abrir una terminal de esta Mac">
+                  <SquareTerminal size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === LOCAL_PROFILE_ID && session.status === 'connected') ? 'online' : ''}`} /><span>{localProfile.name}</span>
+                </button>}
+              </div>}
+              {groupedProfiles.length === 0 && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>Sin resultados</strong></div>}
+              {groupedProfiles.map(([group, connections]) => (
                 <div className="connection-group" key={group}>
                   <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title="Clic derecho para renombrar o eliminar el grupo">
                     <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
@@ -897,8 +911,8 @@ export function App() {
               ))}
             </div>
             <div className="sidebar-actions">
-              <button className="import-connections" onClick={importSshConfig}><Import size={14} />Importar SSH config</button>
-              <button className="add-connection" onClick={openNewProfile}><Plus size={14} />Agregar conexión</button>
+              <button className="import-connections" onClick={importSshConfig} title="Importar SSH config" aria-label="Importar SSH config"><Import size={13} />Importar</button>
+              <button className="add-connection" onClick={openNewProfile} title="Agregar conexión SSH" aria-label="Agregar conexión SSH"><Plus size={13} />Agregar</button>
             </div>
           </aside>
         )}
@@ -908,26 +922,25 @@ export function App() {
         <section className="main-area">
           <div className="tabs-row">
             {!sidebarOpen && <button className="sidebar-reveal" onClick={() => setSidebarOpen(true)} aria-label="Mostrar conexiones"><PanelLeftOpen size={17} /></button>}
-            <button className={`session-tab home-tab ${mainView === 'home' ? 'active' : ''}`} onClick={() => { setMainView('home'); setActiveTool(null) }}><Home size={15} />Inicio</button>
+            <button className={`session-tab home-tab ${mainView === 'home' ? 'active' : ''}`} onClick={() => { setMainView('home'); setActiveTool(null) }} aria-label="Inicio" title="Inicio"><Home size={15} /></button>
             <div className="session-tabs-scroll">
               {sessions.map((session) => {
                 const sameProfileSessions = sessions.filter((item) => item.profile.id === session.profile.id)
                 const ordinal = sameProfileSessions.findIndex((item) => item.id === session.id) + 1
                 return (
-                  <button key={session.id} className={`session-tab ${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}`} onClick={() => { setActiveSessionId(session.id); setSelectedId(session.profile.id); setMainView('terminal') }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.username}@${session.profile.host}:${session.profile.port} · Doble clic para cerrar`}>
-                    <SquareTerminal size={15} /><span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
+                  <button key={session.id} className={`session-tab ${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}`} onClick={() => { setActiveSessionId(session.id); setSelectedId(session.profile.id); setMainView('terminal') }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.kind === 'local' ? 'Terminal de esta Mac' : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · Doble clic para cerrar`}>
+                    {session.profile.kind === 'local' ? <Monitor size={15} /> : <SquareTerminal size={15} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
                 )
               })}
             </div>
-            <button className="new-tab" onClick={openNewProfile} aria-label="Nueva conexión"><Plus size={17} /></button>
             <div className="tab-spacer" />
           </div>
 
           <div className={`content-row ${activeTool && mainView === 'terminal' ? 'panel-open' : ''}`} style={{ '--utility-width': `${utilityPanelWidth}px` } as CSSProperties}>
             <div className={`primary-view ${mainView === 'terminal' && splitMode ? `split-view split-${splitMode}` : ''}`}>
               <div className={`home-layer ${mainView === 'home' ? 'visible' : ''}`}>
-                <WelcomeHome profiles={profiles} recentIds={recentIds} selectedId={selectedId} onSelect={(profile) => setSelectedId(profile.id)} onConnect={openSession} onNew={openNewProfile} onImport={importSshConfig} />
+                <WelcomeHome profiles={[localProfile, ...profiles]} recentIds={recentIds} selectedId={selectedId} onSelect={(profile) => setSelectedId(profile.id)} onConnect={openSession} />
               </div>
               {sessions.map((session) => {
                 const splitVisible = mainView === 'terminal' && splitSessionIds.has(session.id)
@@ -953,21 +966,20 @@ export function App() {
               <span className={`status-dot ${activeSessionCount > 0 ? 'online' : ''}`} />
               <span>{mainView === 'terminal' && activeSession ? statusLabels[activeSession.status] : activeSessionCount > 0 ? `${activeSessionCount} ${activeSessionCount === 1 ? 'sesión activa' : 'sesiones activas'}` : 'Sin conexión'}</span>
               <span className="divider" />
-              <span>{mainView === 'terminal' && activeSession ? `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span>
+              <span>{mainView === 'terminal' && activeSession ? activeSession.profile.kind === 'local' ? activeSession.profile.group : `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? selected.kind === 'local' ? selected.group : `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span>
               {mainView === 'terminal' && activeSession?.status === 'connected' && (
-                <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? 'Activá la integración OSC 7 para mostrar el directorio remoto'}>
+                <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? (activeSession.profile.kind === 'local' ? 'Directorio local no disponible' : 'Configurá OSC 7 para detectar la carpeta remota')}>
                   {activeDirectory ?? 'Ruta —'}
                 </span>
               )}
             </div>
             <div className={`status-right ${telemetryStale ? 'stale' : ''}`}>
-              {mainView === 'terminal' && activeSession?.status === 'connected' && (
+              {mainView === 'terminal' && activeSession?.status === 'connected' && activeSession.profile.kind !== 'local' && (
                 <>
                   <span title="Uso aproximado de CPU del servidor">CPU {activeSession.telemetry?.cpuPercent ?? '—'}{activeSession.telemetry?.cpuPercent !== null && activeSession.telemetry?.cpuPercent !== undefined ? '%' : ''}</span>
                   <span title="Uso aproximado de memoria del servidor">RAM {activeSession.telemetry?.memoryPercent ?? '—'}{activeSession.telemetry ? '%' : ''}</span>
                 </>
               )}
-              <span className="system-ssh">/usr/bin/ssh</span>
             </div>
           </footer>
         </section>
