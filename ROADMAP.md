@@ -19,6 +19,8 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - OpenSSH real mediante una pseudo-terminal.
 - Sesiones simultáneas e independientes en pestañas.
 - Varias sesiones del mismo servidor identificadas como `#1`, `#2`, etc.
+- Vista dividida para comparar hasta cuatro sesiones abiertas.
+- Gestión contextual de grupos de conexiones.
 - Inicio con conexiones recientes.
 - Panel de conexiones plegable y redimensionable.
 - Identidad visual inicial, íconos y banner.

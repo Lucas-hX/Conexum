@@ -20,6 +20,7 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 
 - Conexiones SSH reales mediante `/usr/bin/ssh` y `node-pty`.
 - Varias sesiones independientes en pestañas, incluso hacia el mismo servidor.
+- Vista dividida de dos terminales o cuadrícula de hasta cuatro sesiones abiertas.
 - Pantalla de Inicio con conexiones recientes y listado completo.
 - Perfiles organizados en carpetas contraídas de manera predeterminada.
 - Creación y edición visual de perfiles.
@@ -28,6 +29,7 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 - Integración con `ssh-agent` y macOS Keychain para las passphrases.
 - Panel lateral plegable y redimensionable.
 - Cierre individual de sesiones con confirmación.
+- Grupos de conexiones renombrables y eliminables desde su menú contextual.
 - Identidad nativa de Conexum en la ventana, el Dock, los menús y el diálogo Acerca de.
 - Pruebas automatizadas para argumentos SSH, validación de IPC y limpieza de sesiones.
 - Empaquetado local reproducible como `Conexum.app`.
@@ -148,6 +150,10 @@ Al cancelar una transferencia, el servidor o la carpeta local pueden conservar u
 3. Hacé doble clic sobre un servidor para abrir una sesión.
 4. Repetí el doble clic para abrir otra sesión independiente del mismo servidor.
 5. Hacé doble clic sobre una pestaña para cerrarla con confirmación.
+
+Con dos o más sesiones abiertas, **Dividir** muestra dos terminales lado a lado. Al presionarlo nuevamente se convierte en una cuadrícula de hasta cuatro sesiones; una tercera pulsación vuelve a la vista única. La sesión activa se mantiene siempre dentro de la vista dividida y podés cambiarla desde las pestañas superiores o haciendo clic en otra terminal.
+
+Hacé clic derecho sobre el nombre de un grupo en la barra lateral para renombrarlo o eliminarlo. Eliminar un grupo borra sus perfiles guardados, pero no interrumpe las sesiones que ya estén abiertas.
 
 ## Seguridad
 

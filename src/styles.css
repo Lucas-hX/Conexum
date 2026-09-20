@@ -518,6 +518,39 @@ button {
   background: #080d12;
 }
 
+.primary-view.split-view {
+  display: grid;
+  gap: 1px;
+  background: #28333d;
+}
+
+.primary-view.split-view.split-2,
+.primary-view.split-view.split-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.primary-view.split-view.split-2 {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.primary-view.split-view.split-4 {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.primary-view.split-view .terminal-layer.split-hidden {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.primary-view.split-view .terminal-layer.split-pane {
+  position: relative;
+  inset: auto;
+  visibility: visible;
+  pointer-events: auto;
+}
+
 .home-layer,
 .terminal-layer {
   position: absolute;
@@ -1491,6 +1524,15 @@ button {
 .server-context-menu button:hover {
   color: white;
   background: #2585d9;
+}
+
+.server-context-menu button.danger-item {
+  color: #e59b9b;
+}
+
+.server-context-menu button.danger-item:hover {
+  color: #fff1f1;
+  background: #a83d47;
 }
 
 .server-context-menu button span {

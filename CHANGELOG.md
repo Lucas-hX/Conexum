@@ -2,6 +2,14 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.5.0 — 2026-09-20
+
+### Agregado
+
+- Menú contextual para renombrar o eliminar grupos de conexiones.
+- Vista dividida para dos sesiones y cuadrícula de hasta cuatro terminales independientes.
+- La sesión activa siempre queda visible al cambiar entre pestañas mientras la vista dividida está activa.
+
 ## 0.4.1 — 2026-09-20
 
 ### Corregido
