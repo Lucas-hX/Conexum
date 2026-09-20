@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -25,17 +25,24 @@ const {
   TransferQueue,
   buildListBatch,
   buildMutationBatch,
+  buildReadFileBatch,
   buildSftpArgs,
   buildTransferCommand,
+  buildWriteFileBatch,
   formatSftpError,
   parseSftpListing,
+  quoteSftpPath,
   validateRemotePath,
 } = require('./sftp-core.cjs')
+const { createBackup, parseBackup } = require('./profile-core.cjs')
 
 app.setName('Conexum')
 
 const sessions = new SessionRegistry()
 const sessionConnections = new Map()
+const sessionDiagnostics = new Map()
+const editorWindows = new Map()
+const editorContexts = new Map()
 const telemetryCache = new Map()
 const transferJobs = new Map()
 const transferSnapshots = new Map()
@@ -46,6 +53,7 @@ const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.
 // longer per-user temp path and OpenSSH adds a temporary suffix while binding.
 const controlDirectory = fs.mkdtempSync(path.join('/tmp', 'cx-'))
 const execFileAsync = promisify(execFile)
+const MAX_EDITOR_FILE_BYTES = 2 * 1_024 * 1_024
 
 fs.chmodSync(controlDirectory, 0o700)
 
@@ -165,6 +173,78 @@ function runSftpBatch(context, batch) {
     })
     child.stdin.end(batch)
   })
+}
+
+async function readRemoteText(context, remotePath) {
+  const validatedPath = validateRemotePath(remotePath)
+  const parent = path.posix.dirname(validatedPath)
+  const listing = parseSftpListing(await runSftpBatch(context, buildListBatch(parent)), parent)
+  const entry = listing.entries.find((candidate) => candidate.path === validatedPath)
+  if (!entry) throw new Error('El archivo remoto ya no existe.')
+  if (entry.type !== 'file') throw new Error('Por ahora el editor sólo puede abrir archivos regulares.')
+  if (entry.size > MAX_EDITOR_FILE_BYTES) throw new Error('El archivo supera el límite seguro de 2 MB para el editor.')
+
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'conexum-edit-'))
+  const temporaryFile = path.join(temporaryDirectory, 'remote-file')
+  try {
+    await runSftpBatch(context, buildReadFileBatch(validatedPath, temporaryFile))
+    const content = fs.readFileSync(temporaryFile)
+    if (content.length > MAX_EDITOR_FILE_BYTES) throw new Error('El archivo supera el límite seguro de 2 MB para el editor.')
+    if (content.includes(0)) throw new Error('El archivo parece ser binario y no puede abrirse en el editor de texto.')
+    const text = content.toString('utf8')
+    if (text.includes('\uFFFD')) throw new Error('El archivo no parece estar codificado como UTF-8.')
+    return {
+      path: validatedPath,
+      name: entry.name,
+      content: text,
+      size: content.length,
+      modified: entry.modified,
+      permissions: entry.permissions,
+      fingerprint: crypto.createHash('sha256').update(content).digest('hex'),
+    }
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true })
+  }
+}
+
+async function writeRemoteText(context, request) {
+  const remotePath = validateRemotePath(request.remotePath)
+  if (typeof request.content !== 'string' || Buffer.byteLength(request.content, 'utf8') > MAX_EDITOR_FILE_BYTES || request.content.includes('\0')) {
+    throw new Error('El contenido no es válido o supera el límite de 2 MB.')
+  }
+  if (typeof request.baselineFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(request.baselineFingerprint)) {
+    throw new Error('No se pudo verificar la versión original del archivo.')
+  }
+
+  const current = await readRemoteText(context, remotePath)
+  if (!request.force && current.fingerprint !== request.baselineFingerprint) {
+    return { conflict: true, current: { fingerprint: current.fingerprint, size: current.size, modified: current.modified } }
+  }
+
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'conexum-save-'))
+  const temporaryFile = path.join(temporaryDirectory, 'remote-file')
+  const temporaryRemote = path.posix.join(path.posix.dirname(remotePath), `.${path.posix.basename(remotePath)}.conexum-${crypto.randomUUID()}.tmp`)
+  try {
+    fs.writeFileSync(temporaryFile, request.content, { mode: 0o600 })
+    await runSftpBatch(context, buildWriteFileBatch(temporaryFile, remotePath, temporaryRemote, current.permissions))
+    const bytes = Buffer.from(request.content, 'utf8')
+    return {
+      conflict: false,
+      file: {
+        path: remotePath,
+        name: path.posix.basename(remotePath),
+        size: bytes.length,
+        modified: new Date().toISOString(),
+        permissions: current.permissions,
+        fingerprint: crypto.createHash('sha256').update(bytes).digest('hex'),
+      },
+    }
+  } catch (error) {
+    try { await runSftpBatch(context, `@rm ${quoteSftpPath(temporaryRemote)}\n`) } catch {}
+    throw error
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true })
+  }
 }
 
 function cancelSessionTransfers(sessionId) {
@@ -382,6 +462,42 @@ function registerProfileHandlers() {
     return aliases.map((alias) => resolveSshAlias(alias, configFile))
   })
 
+  ipcMain.handle('profiles:export-backup', async (event, profiles) => {
+    const backup = createBackup(profiles)
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showSaveDialog(parent ?? undefined, {
+      title: 'Exportar conexiones de Conexum',
+      defaultPath: path.join(os.homedir(), 'Documents', `conexum-conexiones-${new Date().toISOString().slice(0, 10)}.json`),
+      filters: [{ name: 'Respaldo de Conexum', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return null
+    const destination = path.resolve(result.filePath)
+    const temporary = `${destination}.conexum-${crypto.randomUUID()}.tmp`
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify(backup, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+      fs.renameSync(temporary, destination)
+      fs.chmodSync(destination, 0o600)
+      return destination
+    } finally {
+      fs.rmSync(temporary, { force: true })
+    }
+  })
+
+  ipcMain.handle('profiles:import-backup', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(parent ?? undefined, {
+      title: 'Importar conexiones de Conexum',
+      defaultPath: path.join(os.homedir(), 'Documents'),
+      filters: [{ name: 'Respaldo de Conexum', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths[0]) return []
+    const source = validateFilePath(result.filePaths[0], 'El archivo de respaldo')
+    const stats = fs.statSync(source)
+    if (!stats.isFile() || stats.size > 2_000_000) throw new Error('El respaldo es demasiado grande o no es un archivo válido.')
+    return parseBackup(fs.readFileSync(source, 'utf8'))
+  })
+
   ipcMain.handle('profiles:forget-identity', (_event, filePath) => {
     const identityFile = validateFilePath(String(filePath || ''), 'El archivo de identidad')
     execFileSync('/usr/bin/ssh-add', ['--apple-use-keychain', '-d', identityFile], {
@@ -495,6 +611,18 @@ function registerSftpHandlers() {
   ipcMain.on('sftp:cancel-transfer', (_event, { transferId } = {}) => {
     if (isValidSessionId(transferId)) transferQueue.cancel(transferId)
   })
+
+  ipcMain.handle('editor:read-text', async (_event, { sessionId, remotePath } = {}) => {
+    return readRemoteText(sessionContext(sessionId), remotePath)
+  })
+
+  ipcMain.handle('editor:write-text', async (_event, request = {}) => {
+    const result = await writeRemoteText(sessionContext(request.sessionId), request)
+    if (!result.conflict) {
+      for (const window of BrowserWindow.getAllWindows()) sendToRenderer(window.webContents, 'sftp:file-saved', { sessionId: request.sessionId, remotePath: request.remotePath })
+    }
+    return result
+  })
 }
 
 function registerSshHandlers() {
@@ -521,6 +649,22 @@ function registerSshHandlers() {
 
     sessions.add(connection.sessionId, sshProcess)
     sessionConnections.set(connection.sessionId, { connection, cacheKey, controlPath })
+    sessionDiagnostics.set(connection.sessionId, {
+      sessionId: connection.sessionId,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      identityFile: connection.identityFile || null,
+      sshAlias: connection.sshAlias || null,
+      configFile: connection.configFile || null,
+      status: 'connected',
+      pid: sshProcess.pid,
+      startedAt: Date.now(),
+      endedAt: null,
+      exitCode: null,
+      signal: null,
+      lastError: null,
+    })
 
     sshProcess.onData((data) => {
       if (!sender.isDestroyed()) {
@@ -532,6 +676,15 @@ function registerSshHandlers() {
       sessions.remove(connection.sessionId)
       sessionConnections.delete(connection.sessionId)
       cancelSessionTransfers(connection.sessionId)
+      const diagnostic = sessionDiagnostics.get(connection.sessionId)
+      if (diagnostic) sessionDiagnostics.set(connection.sessionId, {
+        ...diagnostic,
+        status: exitCode === 0 ? 'disconnected' : 'error',
+        endedAt: Date.now(),
+        exitCode,
+        signal: signal ?? null,
+        lastError: exitCode === 0 ? null : `OpenSSH finalizó con código ${exitCode}.`,
+      })
       if (!sender.isDestroyed()) {
         sender.send('ssh:exit', {
           sessionId: connection.sessionId,
@@ -560,6 +713,8 @@ function registerSshHandlers() {
     if (!isValidSessionId(sessionId)) return
     cancelSessionTransfers(sessionId)
     sessionConnections.delete(sessionId)
+    const diagnostic = sessionDiagnostics.get(sessionId)
+    if (diagnostic) sessionDiagnostics.set(sessionId, { ...diagnostic, status: 'disconnected', endedAt: Date.now(), lastError: null })
     sessions.close(sessionId)
   })
 
@@ -569,6 +724,33 @@ function registerSshHandlers() {
     if (!context || !sessions.has(sessionId)) return null
     return collectTelemetry(context)
   })
+
+  ipcMain.handle('ssh:diagnostics', (_event, { sessionId } = {}) => {
+    if (!isValidSessionId(sessionId)) return null
+    return sessionDiagnostics.get(sessionId) ?? null
+  })
+
+  ipcMain.handle('ssh:copy-diagnostics', (_event, { sessionId } = {}) => {
+    if (!isValidSessionId(sessionId)) return false
+    const item = sessionDiagnostics.get(sessionId)
+    if (!item) return false
+    clipboard.writeText([
+      'Conexum — Diagnóstico de conexión',
+      `Estado: ${item.status}`,
+      `Host: ${item.host}`,
+      `Puerto: ${item.port}`,
+      `Usuario: ${item.username}`,
+      `IdentityFile: ${item.identityFile || 'No especificado'}`,
+      `Alias SSH: ${item.sshAlias || 'No especificado'}`,
+      `Config SSH: ${item.configFile || 'No especificado'}`,
+      `PID: ${item.pid ?? '—'}`,
+      `Inicio: ${item.startedAt ? new Date(item.startedAt).toISOString() : '—'}`,
+      `Fin: ${item.endedAt ? new Date(item.endedAt).toISOString() : '—'}`,
+      `Código de salida: ${item.exitCode ?? '—'}`,
+      `Último error: ${item.lastError || 'Ninguno'}`,
+    ].join('\n'))
+    return true
+  })
 }
 
 function closeAllSessions() {
@@ -576,6 +758,7 @@ function closeAllSessions() {
   transferJobs.clear()
   transferRetrySources.clear()
   sessionConnections.clear()
+  sessionDiagnostics.clear()
   sessions.closeAll()
 }
 
@@ -611,9 +794,99 @@ function createWindow() {
   window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
 }
 
+function createEditorWindow(parent, context, initialPath) {
+  let allowClose = false
+  const editorWindow = new BrowserWindow({
+    width: 1360,
+    height: 860,
+    minWidth: 860,
+    minHeight: 560,
+    parent: parent ?? undefined,
+    title: `Conexum Editor — ${context.profileName}`,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 18, y: 18 },
+    backgroundColor: '#0b1016',
+    icon: appIconPath,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  const state = { ...context, initialPath: initialPath ?? null, dirty: false }
+  const webContentsId = editorWindow.webContents.id
+  editorWindows.set(context.sessionId, editorWindow)
+  editorContexts.set(webContentsId, state)
+
+  editorWindow.once('ready-to-show', () => editorWindow.show())
+  editorWindow.on('close', (event) => {
+    if (allowClose || !state.dirty) return
+    event.preventDefault()
+    void dialog.showMessageBox(editorWindow, {
+      type: 'warning',
+      buttons: ['Cerrar sin guardar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Cambios sin guardar',
+      message: 'Hay archivos remotos con cambios sin guardar.',
+      detail: 'Si cerrás el editor ahora, esos cambios locales se perderán.',
+    }).then((result) => {
+      if (result.response === 0) {
+        allowClose = true
+        editorWindow.close()
+      }
+    })
+  })
+  editorWindow.on('closed', () => {
+    editorWindows.delete(context.sessionId)
+    editorContexts.delete(webContentsId)
+  })
+  editorWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { query: { view: 'editor' } })
+  return editorWindow
+}
+
+function registerEditorWindowHandlers() {
+  ipcMain.handle('editor:open-window', (event, request = {}) => {
+    const context = sessionContext(request.sessionId)
+    const profileName = typeof request.profileName === 'string' && request.profileName.length <= 200 && !/[\r\n\0]/.test(request.profileName)
+      ? request.profileName
+      : `${context.connection.username}@${context.connection.host}`
+    const remotePath = request.remotePath ? validateRemotePath(request.remotePath) : null
+    const initialDirectory = validateRemotePath(request.initialDirectory || (remotePath ? path.posix.dirname(remotePath) : '/'))
+    const existing = editorWindows.get(request.sessionId)
+    if (existing && !existing.isDestroyed()) {
+      existing.show()
+      existing.focus()
+      if (remotePath) sendToRenderer(existing.webContents, 'editor:open-file', { remotePath })
+      return true
+    }
+    createEditorWindow(BrowserWindow.fromWebContents(event.sender), {
+      sessionId: request.sessionId,
+      profileName,
+      initialDirectory,
+    }, remotePath)
+    return true
+  })
+
+  ipcMain.handle('editor:get-context', (event) => {
+    const context = editorContexts.get(event.sender.id)
+    if (!context) throw new Error('Esta ventana no tiene un contexto de edición activo.')
+    return { sessionId: context.sessionId, profileName: context.profileName, initialDirectory: context.initialDirectory, initialPath: context.initialPath }
+  })
+
+  ipcMain.on('editor:set-dirty', (event, dirty) => {
+    const context = editorContexts.get(event.sender.id)
+    if (context) context.dirty = dirty === true
+  })
+}
+
 registerSshHandlers()
 registerProfileHandlers()
 registerSftpHandlers()
+registerEditorWindowHandlers()
 
 app.whenReady().then(() => {
   app.setAppUserModelId('com.lucashx.conexum')

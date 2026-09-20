@@ -47,6 +47,33 @@ export type SftpTransferProgress = {
   updatedAt: number
 }
 
+export type SshDiagnostics = {
+  sessionId: string
+  host: string
+  port: number
+  username: string
+  identityFile: string | null
+  sshAlias: string | null
+  configFile: string | null
+  status: 'connected' | 'disconnected' | 'error'
+  pid: number | null
+  startedAt: number
+  endedAt: number | null
+  exitCode: number | null
+  signal: number | null
+  lastError: string | null
+}
+
+export type RemoteTextFile = {
+  path: string
+  name: string
+  content: string
+  size: number
+  modified: string
+  permissions: string
+  fingerprint: string
+}
+
 declare global {
   interface Window {
     conexum?: {
@@ -57,12 +84,16 @@ declare global {
         resize(sessionId: string, cols: number, rows: number): void
         disconnect(sessionId: string): void
         getTelemetry(sessionId: string): Promise<RemoteTelemetry | null>
+        getDiagnostics(sessionId: string): Promise<SshDiagnostics | null>
+        copyDiagnostics(sessionId: string): Promise<boolean>
         onData(callback: (event: { sessionId: string; data: string }) => void): () => void
         onExit(callback: (event: { sessionId: string; exitCode: number; signal?: number }) => void): () => void
       }
       profiles: {
         chooseIdentityFile(): Promise<string | null>
         importSshConfig(): Promise<ConnectionProfile[]>
+        exportBackup(profiles: ConnectionProfile[]): Promise<string | null>
+        importBackup(): Promise<ConnectionProfile[]>
         forgetIdentityPassphrase(filePath: string): Promise<boolean>
       }
       sftp: {
@@ -76,6 +107,18 @@ declare global {
         retryTransfer(transferId: string): Promise<{ transferId: string }>
         cancelTransfer(transferId: string): void
         onTransferProgress(callback: (event: SftpTransferProgress) => void): () => void
+        onFileSaved(callback: (event: { sessionId: string; remotePath: string }) => void): () => void
+      }
+      editor: {
+        openWindow(request: { sessionId: string; profileName: string; initialDirectory: string; remotePath?: string }): Promise<boolean>
+        getContext(): Promise<{ sessionId: string; profileName: string; initialDirectory: string; initialPath: string | null }>
+        readText(sessionId: string, remotePath: string): Promise<RemoteTextFile>
+        writeText(request: { sessionId: string; remotePath: string; content: string; baselineFingerprint: string; force?: boolean }): Promise<
+          | { conflict: true; current: { fingerprint: string; size: number; modified: string } }
+          | { conflict: false; file: Omit<RemoteTextFile, 'content'> }
+        >
+        setDirty(dirty: boolean): void
+        onOpenFile(callback: (event: { remotePath: string }) => void): () => void
       }
     }
   }

@@ -2,7 +2,7 @@
   "name": "conexum",
   "productName": "Conexum",
   "private": true,
-  "version": "0.5.3",
+  "version": "0.6.0",
   "description": "A simple, terminal-first SSH connection manager for macOS",
   "author": "Lucas-hX",
   "homepage": "https://github.com/Lucas-hX/Conexum",
@@ -24,9 +24,11 @@
     "update:local": "./scripts/update-conexum.command"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "lucide-react": "^1.47.0",
+    "monaco-editor": "^0.56.0",
     "node-pty": "^1.1.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

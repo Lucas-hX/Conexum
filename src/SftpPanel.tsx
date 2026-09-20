@@ -3,14 +3,17 @@ import type { DragEvent } from 'react'
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  ArrowUpDown,
   ChevronDown,
   ChevronUp,
+  Code2,
   Eye,
   EyeOff,
   File,
   Folder,
   FolderPlus,
   LoaderCircle,
+  Link,
   Pencil,
   RefreshCw,
   Trash2,
@@ -23,6 +26,7 @@ type Props = {
   profileName: string
   initialDirectory: string | null
   onClose(): void
+  onOpenEditor(remotePath?: string): void
 }
 
 function joinRemote(directory: string, name: string) {
@@ -61,12 +65,17 @@ const transferStatusLabel: Record<SftpTransferProgress['status'], string> = {
   error: 'error',
 }
 
-export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }: Props) {
+type SortKey = 'name' | 'size' | 'permissions' | 'owner' | 'modified'
+
+export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, onOpenEditor }: Props) {
   const [directory, setDirectory] = useState(initialDirectory ?? '')
   const [pathDraft, setPathDraft] = useState(initialDirectory ?? '')
   const [entries, setEntries] = useState<SftpEntry[]>([])
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [showHidden, setShowHidden] = useState(false)
+  const [editingPath, setEditingPath] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [loading, setLoading] = useState(true)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,10 +84,24 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
   const directoryRef = useRef(directory)
   const selected = entries.find((entry) => entry.path === selectedPath) ?? null
 
-  const visibleEntries = useMemo(
-    () => showHidden ? entries : entries.filter((entry) => !entry.hidden),
-    [entries, showHidden],
-  )
+  const visibleEntries = useMemo(() => {
+    const filtered = showHidden ? entries : entries.filter((entry) => !entry.hidden)
+    return [...filtered].sort((left, right) => {
+      if (left.type === 'directory' && right.type !== 'directory') return -1
+      if (left.type !== 'directory' && right.type === 'directory') return 1
+      const leftValue = sortKey === 'size' ? left.size : left[sortKey]
+      const rightValue = sortKey === 'size' ? right.size : right[sortKey]
+      const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? leftValue - rightValue
+        : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' })
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
+  }, [entries, showHidden, sortDirection, sortKey])
+
+  const breadcrumbs = useMemo(() => {
+    const parts = directory.split('/').filter(Boolean)
+    return [{ name: '/', path: '/' }, ...parts.map((part, index) => ({ name: part, path: `/${parts.slice(0, index + 1).join('/')}` }))]
+  }, [directory])
 
   useEffect(() => {
     directoryRef.current = directory
@@ -93,6 +116,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
       const result = await api.list(sessionId, remotePath)
       setDirectory(result.directory)
       setPathDraft(result.directory)
+      setEditingPath(false)
       setEntries(result.entries)
       setSelectedPath(null)
     } catch (loadError) {
@@ -132,6 +156,18 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
       removeListener()
     }
   }, [loadDirectory, sessionId])
+
+  useEffect(() => window.conexum?.sftp.onFileSaved(({ sessionId: savedSessionId, remotePath }) => {
+    if (savedSessionId === sessionId && parentRemote(remotePath) === directoryRef.current) void loadDirectory(directoryRef.current)
+  }), [loadDirectory, sessionId])
+
+  const changeSort = (key: SortKey) => {
+    if (sortKey === key) setSortDirection((current) => current === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortKey(key)
+      setSortDirection('asc')
+    }
+  }
 
   const enqueueUpload = async (file: { path: string; name: string }) => {
     const api = window.conexum?.sftp
@@ -243,9 +279,15 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
         <button className="icon-button" onClick={onClose} aria-label="Cerrar explorador SFTP"><X size={17} /></button>
       </div>
 
-      <form className="sftp-pathbar" onSubmit={(event) => { event.preventDefault(); void loadDirectory(pathDraft) }}>
+      <form className={`sftp-pathbar ${editingPath ? 'editing' : ''}`} onSubmit={(event) => { event.preventDefault(); void loadDirectory(pathDraft) }}>
         <button type="button" onClick={() => void loadDirectory(parentRemote(directory || '/'))} disabled={loading || directory === '/'} aria-label="Subir una carpeta"><ChevronUp size={15} /></button>
-        <input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} aria-label="Ruta remota" spellCheck={false} />
+        {editingPath ? (
+          <input autoFocus value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onBlur={() => setEditingPath(false)} aria-label="Ruta remota" spellCheck={false} />
+        ) : (
+          <div className="sftp-breadcrumbs" onDoubleClick={() => setEditingPath(true)} title="Doble clic para escribir una ruta">
+            {breadcrumbs.map((crumb, index) => <button key={crumb.path} type="button" onClick={() => void loadDirectory(crumb.path)}>{crumb.name}{index < breadcrumbs.length - 1 && <span>›</span>}</button>)}
+          </div>
+        )}
         <button type="button" onClick={() => void loadDirectory(directory || undefined)} disabled={loading} aria-label="Actualizar"><RefreshCw size={14} /></button>
       </form>
 
@@ -255,11 +297,20 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
         <button onClick={() => void createFolder()}><FolderPlus size={14} /></button>
         <button onClick={() => void renameSelected()} disabled={!selected}><Pencil size={13} /></button>
         <button className="danger" onClick={() => void removeSelected()} disabled={!selected}><Trash2 size={13} /></button>
+        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined)} disabled={Boolean(selected && selected.type !== 'file')} title="Abrir ventana del editor"><Code2 size={14} />Editor</button>
         <span />
         <button onClick={() => setShowHidden((current) => !current)} title={showHidden ? 'Ocultar archivos ocultos' : 'Mostrar archivos ocultos'}>{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div>
 
       {error && <div className="sftp-error"><span>{error}</span><button onClick={() => setError(null)}><X size={13} /></button></div>}
+
+      <div className="sftp-table-heading" aria-hidden={loading}>
+        <button onClick={() => changeSort('name')}>Nombre <ArrowUpDown size={10} /></button>
+        <button onClick={() => changeSort('size')}>Tamaño</button>
+        <button onClick={() => changeSort('permissions')}>Permisos</button>
+        <button onClick={() => changeSort('owner')}>Propietario</button>
+        <button onClick={() => changeSort('modified')}>Modificado</button>
+      </div>
 
       <div className="sftp-list" role="list" aria-busy={loading}>
         {loading ? (
@@ -269,15 +320,17 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
         ) : visibleEntries.map((entry) => (
           <button
             key={entry.path}
-            className={selectedPath === entry.path ? 'selected' : ''}
+            className={`sftp-entry-row ${selectedPath === entry.path ? 'selected' : ''}`}
             onClick={() => setSelectedPath(entry.path)}
-            onDoubleClick={() => { if (entry.type === 'directory') void loadDirectory(entry.path) }}
+            onDoubleClick={() => { if (entry.type === 'directory') void loadDirectory(entry.path); else if (entry.type === 'file') onOpenEditor(entry.path) }}
             role="listitem"
             title={`${entry.permissions} · ${entry.owner} · ${entry.modified}`}
           >
-            {entry.type === 'directory' ? <Folder size={15} /> : <File size={15} />}
-            <span>{entry.name}</span>
+            <span className="sftp-entry-name">{entry.type === 'directory' ? <Folder size={15} /> : entry.type === 'symlink' ? <Link size={14} /> : <File size={15} />}<span>{entry.name}</span></span>
             <small>{entry.type === 'directory' ? '—' : formatSize(entry.size)}</small>
+            <small>{entry.permissions}</small>
+            <small>{entry.owner}</small>
+            <small>{entry.modified}</small>
           </button>
         ))}
       </div>

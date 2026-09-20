@@ -38,8 +38,11 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 - Métricas discretas de CPU y RAM para la pestaña activa cada 9 segundos.
 - Actualizador local seguro para builds alpha instalados en macOS.
 - Explorador SFTP acoplable con navegación, transferencias y operaciones seguras.
+- Respaldo e importación de perfiles en un formato versionado que nunca incluye contraseñas ni claves privadas.
+- Diagnóstico de conexión copiable sin capturar contenido de la terminal.
+- Ventana independiente Conexum Editor con árbol SFTP, Monaco, pestañas y guardado remoto seguro.
 
-Todavía están pendientes el editor remoto, la firma y notarización para distribución pública y otras mejoras descritas en el [roadmap](ROADMAP.md).
+Todavía están pendientes la firma y notarización para distribución pública, funciones avanzadas del editor y otras mejoras descritas en el [roadmap](ROADMAP.md).
 
 ## Requisitos
 
@@ -129,7 +132,8 @@ Con una sesión activa, presioná **SFTP** para abrir el panel lateral. El explo
 
 Desde el panel se puede:
 
-- navegar con doble clic y escribir una ruta absoluta;
+- navegar con breadcrumbs, doble clic o escribiendo una ruta absoluta;
+- ordenar por nombre, tamaño, permisos, propietario o fecha;
 - mostrar u ocultar archivos ocultos;
 - crear carpetas;
 - renombrar o mover archivos y carpetas;
@@ -137,6 +141,7 @@ Desde el panel se puede:
 - subir archivos mediante el selector o arrastrando desde Finder;
 - descargar archivos eligiendo su destino local;
 - observar y cancelar transferencias desde una cola compacta;
+- abrir archivos de texto directamente en Conexum Editor;
 - cerrar o redimensionar el panel sin interrumpir la terminal.
 
 Conexum utiliza `/usr/bin/sftp` y el socket multiplexado de la sesión existente. No guarda credenciales ni implementa el protocolo SFTP. Los archivos locales sólo pueden transferirse después de seleccionarlos explícitamente mediante Finder, el diálogo de macOS o arrastrar y soltar.
@@ -144,6 +149,30 @@ Conexum utiliza `/usr/bin/sftp` y el socket multiplexado de la sesión existente
 Al cancelar una transferencia, el servidor o la carpeta local pueden conservar un archivo parcial. Conexum lo deja visible para que el usuario decida si desea inspeccionarlo, reintentar la operación o eliminarlo; nunca borra archivos automáticamente después de una interrupción.
 
 Las transferencias fallidas o canceladas muestran un botón de reintento. El reintento vuelve a comprobar la ruta local y comienza una transferencia nueva; no intenta combinar automáticamente datos parciales.
+
+## Respaldos y diagnóstico
+
+El menú de ajustes permite exportar e importar conexiones de Conexum. El respaldo incluye nombres, grupos, destinos, puertos, usuarios y rutas configuradas, pero nunca contiene contraseñas, passphrases ni el contenido de una clave privada. Los archivos exportados se escriben con permisos locales restrictivos.
+
+Con una pestaña seleccionada, **Diagnóstico** muestra únicamente datos sanitizados del perfil y del proceso OpenSSH: destino, puerto, usuario, IdentityFile, estado y código de salida. **Copiar diagnóstico** no incluye el contenido ni las pulsaciones de la terminal.
+
+## Conexum Editor
+
+Con una sesión activa, presioná **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
+
+La primera versión incluye:
+
+- árbol remoto SFTP cargado bajo demanda;
+- pestañas de documentos y resaltado de sintaxis mediante Monaco Editor;
+- búsqueda, reemplazo, números de línea y atajos habituales de edición;
+- guardado remoto con `⌘S`;
+- comprobación de la huella del archivo antes de sobrescribirlo;
+- confirmación si el archivo cambió en el servidor;
+- reemplazo mediante un archivo temporal remoto y conservación de permisos;
+- confirmación al cerrar documentos o la ventana con cambios pendientes;
+- rechazo de archivos binarios, no UTF-8 o mayores a 2 MB.
+
+El editor depende de una sesión SSH activa. Si la sesión termina, el contenido abierto permanece visible, pero es necesario reconectarla para volver a navegar o guardar.
 
 ## Primer uso
 
@@ -171,6 +200,7 @@ Hacé clic derecho sobre el nombre de un grupo en la barra lateral para renombra
 - El directorio remoto llega por OSC 7; Conexum no analiza la pantalla ni registra teclas.
 - SFTP funciona en un proceso separado con `BatchMode=yes`, sin reenviar puertos ni solicitar credenciales nuevas.
 - Eliminar contenido remoto siempre requiere confirmación y las carpetas sólo se eliminan cuando están vacías.
+- El editor comprueba conflictos antes de guardar y nunca guarda silenciosamente sobre una versión remota diferente.
 
 No incluyas contraseñas, claves privadas ni información sensible en reportes de errores.
 
