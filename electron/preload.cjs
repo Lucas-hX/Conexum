@@ -54,7 +54,8 @@ contextBridge.exposeInMainWorld('conexum', {
     getContext: () => ipcRenderer.invoke('editor:get-context'),
     readText: (sessionId, remotePath) => ipcRenderer.invoke('editor:read-text', { sessionId, remotePath }),
     writeText: (request) => ipcRenderer.invoke('editor:write-text', request),
-    setDirty: (dirty) => ipcRenderer.send('editor:set-dirty', dirty),
+    setState: (state) => ipcRenderer.send('editor:set-state', state),
+    closeWindow: (state) => ipcRenderer.invoke('editor:close-window', state),
     onOpenFile: (callback) => {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('editor:open-file', listener)

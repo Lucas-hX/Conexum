@@ -1,6 +1,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 const {
@@ -8,6 +10,7 @@ const {
   buildListBatch,
   buildMutationBatch,
   buildReadFileBatch,
+  decodeEditorText,
   buildSftpArgs,
   buildTransferCommand,
   buildWriteFileBatch,
@@ -71,6 +74,13 @@ test('builds safe remote editor read and atomic write batches', () => {
   assert.throws(() => buildWriteFileBatch('/tmp/file', '/srv/app/file', '/tmp/file', '-rw-r--r--'), /misma carpeta/i)
 })
 
+test('decodes only valid UTF-8 text without rejecting a literal replacement character', () => {
+  assert.equal(decodeEditorText(Buffer.from('café \uFFFD')), 'café \uFFFD')
+  assert.equal(decodeEditorText(Buffer.from([0xef, 0xbb, 0xbf, 0x61])), '\uFEFFa')
+  assert.throws(() => decodeEditorText(Buffer.from([0xc3, 0x28])), /UTF-8/i)
+  assert.throws(() => decodeEditorText(Buffer.from([0x61, 0x00, 0x62])), /binario/i)
+})
+
 test('parses and sorts the current macOS OpenSSH long-list format', () => {
   const listing = parseSftpListing(`Remote working directory: /srv/app
 -rw-r--r--    ? deploy staff        120 Jan 03 12:30 notes file.txt
@@ -110,6 +120,30 @@ test('parses a real listing from the macOS OpenSSH SFTP client', {
   assert.equal(result.status, 0, result.stderr)
   const listing = parseSftpListing(result.stdout, process.cwd())
   assert.ok(listing.entries.some((entry) => entry.name === 'package.json' && entry.type === 'file'))
+})
+
+test('replaces an existing remote file through the macOS SFTP server', {
+  skip: !fs.existsSync('/usr/bin/sftp') || !fs.existsSync('/usr/libexec/sftp-server'),
+}, () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'conexum-editor-test-'))
+  const localPath = path.join(directory, 'draft.txt')
+  const destination = path.join(directory, 'remote.txt')
+  const temporaryRemote = path.join(directory, '.remote.txt.conexum-test.tmp')
+  try {
+    fs.writeFileSync(localPath, 'new version')
+    fs.writeFileSync(destination, 'old version')
+    const result = spawnSync('/usr/bin/sftp', ['-N', '-b', '-', '-D', '/usr/libexec/sftp-server'], {
+      encoding: 'utf8',
+      input: buildWriteFileBatch(localPath, destination, temporaryRemote, '-rw-r-----'),
+      timeout: 5_000,
+    })
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    assert.equal(fs.readFileSync(destination, 'utf8'), 'new version')
+    assert.equal(fs.statSync(destination).mode & 0o777, 0o640)
+    assert.equal(fs.existsSync(temporaryRemote), false)
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
 })
 
 test('runs one transfer at a time and cancels queued work', async () => {
