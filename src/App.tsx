@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Square,
   SquareTerminal,
+  Trash2,
   X,
 } from 'lucide-react'
 import type { ConnectionProfile, RemoteTelemetry } from './conexum'
@@ -32,6 +33,10 @@ import type { ConnectionProfile, RemoteTelemetry } from './conexum'
 type ToolPanel = 'sftp' | 'editor' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 type MainView = 'home' | 'terminal'
+type SplitMode = 0 | 2 | 4
+type ContextMenuState =
+  | { x: number; y: number; kind: 'profile'; profileId: string }
+  | { x: number; y: number; kind: 'group'; group: string }
 
 type SshSessionTab = {
   id: string
@@ -455,14 +460,22 @@ export function App() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState<ConnectionProfile | null>(null)
   const [identityRequiredProfileId, setIdentityRequiredProfileId] = useState<string | null>(null)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; profileId: string } | null>(null)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [sessions, setSessions] = useState<SshSessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [splitMode, setSplitMode] = useState<SplitMode>(0)
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map())
 
   const selected = profiles.find((profile) => profile.id === selectedId) ?? null
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
   const activeSessionCount = sessions.filter((session) => session.status === 'connected' || session.status === 'connecting').length
+  const splitSessions = useMemo(() => {
+    if (!splitMode) return []
+    const active = sessions.find((session) => session.id === activeSessionId)
+    const others = sessions.filter((session) => session.id !== activeSessionId)
+    return (active ? [active, ...others] : sessions).slice(0, splitMode)
+  }, [activeSessionId, sessions, splitMode])
+  const splitSessionIds = useMemo(() => new Set(splitSessions.map((session) => session.id)), [splitSessions])
   const groupedProfiles = useMemo(() => {
     const filtered = profiles.filter((profile) => profile.name.toLowerCase().includes(query.toLowerCase()))
     const groups = new Map<string, ConnectionProfile[]>()
@@ -530,6 +543,10 @@ export function App() {
   useEffect(() => {
     if (activeTool && activeSession?.status !== 'connected') setActiveTool(null)
   }, [activeSession?.status, activeTool])
+
+  useEffect(() => {
+    if (splitMode && sessions.length < 2) setSplitMode(0)
+  }, [sessions.length, splitMode])
 
   const openNewProfile = () => {
     setEditingProfile(null)
@@ -646,6 +663,49 @@ export function App() {
     })
   }
 
+  const renameGroup = (group: string) => {
+    const value = window.prompt('Nuevo nombre del grupo:', group)?.trim()
+    if (!value || value === group) {
+      setContextMenu(null)
+      return
+    }
+    if (value.length > 100 || /[\r\n\0]/.test(value)) return
+    setProfiles((current) => current.map((profile) => profile.group === group ? { ...profile, group: value } : profile))
+    setCollapsedGroups((current) => {
+      const next = new Set(current)
+      const wasCollapsed = next.delete(group)
+      if (wasCollapsed) next.add(value)
+      return next
+    })
+    setContextMenu(null)
+  }
+
+  const deleteGroup = (group: string) => {
+    const groupProfiles = profiles.filter((profile) => profile.group === group)
+    if (!groupProfiles.length) return
+    const activeCount = sessions.filter((session) => groupProfiles.some((profile) => profile.id === session.profile.id)).length
+    const detail = activeCount ? ` Las ${activeCount} pestaña${activeCount === 1 ? '' : 's'} abierta${activeCount === 1 ? '' : 's'} seguirá${activeCount === 1 ? '' : 'n'} funcionando hasta que la cierres.` : ''
+    if (!window.confirm(`¿Eliminar el grupo “${group}” y sus ${groupProfiles.length} conexiones?${detail}`)) return
+    setProfiles((current) => {
+      const remaining = current.filter((profile) => profile.group !== group)
+      setSelectedId((selectedProfileId) => remaining.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : remaining[0]?.id ?? null)
+      return remaining
+    })
+    setCollapsedGroups((current) => {
+      const next = new Set(current)
+      next.delete(group)
+      return next
+    })
+    setContextMenu(null)
+  }
+
+  const cycleSplitMode = () => {
+    if (sessions.length < 2) return
+    setMainView('terminal')
+    setActiveTool(null)
+    setSplitMode((current) => current === 0 ? 2 : current === 2 ? 4 : 0)
+  }
+
   const importSshConfig = async () => {
     const imported = await window.conexum?.profiles.importSshConfig()
     if (!imported?.length) return
@@ -709,7 +769,7 @@ export function App() {
             disabled={mainView === 'terminal' ? !activeSession : !selected}
             onClick={connectOrDisconnect}
           />
-          <ToolButton icon={<Columns2 size={16} />} label="Dividir" disabled />
+          <ToolButton icon={<Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <ToolButton icon={<FolderOpen size={16} />} label="SFTP" active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected'} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
           <ToolButton icon={<FileCode2 size={16} />} label="Editor" active={activeTool === 'editor'} disabled={!activeSession} onClick={() => { setMainView('terminal'); toggleTool('editor') }} />
           <button className="icon-button" aria-label="Ajustes"><Settings2 size={17} /></button>
@@ -726,11 +786,11 @@ export function App() {
                 <div className="empty-connections"><Server size={28} /><strong>No hay conexiones</strong><p>Agregá tu primer servidor SSH.</p></div>
               ) : groupedProfiles.map(([group, connections]) => (
                 <div className="connection-group" key={group}>
-                  <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)}>
+                  <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title="Clic derecho para renombrar o eliminar el grupo">
                     <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
                   </button>
                   {!collapsedGroups.has(group) && connections.map((connection) => (
-                    <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, profileId: connection.id }) }} title="Doble clic para abrir otra sesión · Clic derecho para editar">
+                    <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title="Doble clic para abrir otra sesión · Clic derecho para editar">
                       <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label="Usa clave SSH" /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
                     </button>
                   ))}
@@ -766,15 +826,17 @@ export function App() {
           </div>
 
           <div className={`content-row ${activeTool && mainView === 'terminal' ? 'panel-open' : ''}`} style={{ '--utility-width': `${utilityPanelWidth}px` } as CSSProperties}>
-            <div className="primary-view">
+            <div className={`primary-view ${mainView === 'terminal' && splitMode ? `split-view split-${splitMode}` : ''}`}>
               <div className={`home-layer ${mainView === 'home' ? 'visible' : ''}`}>
                 <WelcomeHome profiles={profiles} recentIds={recentIds} selectedId={selectedId} onSelect={(profile) => setSelectedId(profile.id)} onConnect={openSession} onNew={openNewProfile} onImport={importSshConfig} />
               </div>
-              {sessions.map((session) => (
-                <div key={session.id} className={`terminal-panel terminal-layer ${mainView === 'terminal' && activeSessionId === session.id ? 'visible' : ''}`}>
+              {sessions.map((session) => {
+                const splitVisible = mainView === 'terminal' && splitSessionIds.has(session.id)
+                const singleVisible = mainView === 'terminal' && !splitMode && activeSessionId === session.id
+                return <div key={session.id} className={`terminal-panel terminal-layer ${splitVisible || singleVisible ? 'visible' : ''} ${splitMode ? (splitVisible ? 'split-pane' : 'split-hidden') : ''}`} onMouseDown={() => setActiveSessionId(session.id)}>
                   <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
                 </div>
-              ))}
+              })}
             </div>
             {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(380)} />}
             {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
@@ -812,7 +874,7 @@ export function App() {
           </footer>
         </section>
       </section>
-      {contextMenu && (() => {
+      {contextMenu && contextMenu.kind === 'profile' && (() => {
         const profile = profiles.find((item) => item.id === contextMenu.profileId)
         if (!profile) return null
         return (
@@ -822,6 +884,12 @@ export function App() {
           </div>
         )
       })()}
+      {contextMenu && contextMenu.kind === 'group' && (
+        <div className="server-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <button onClick={() => renameGroup(contextMenu.group)}><Pencil size={14} />Renombrar grupo…</button>
+          <button className="danger-item" onClick={() => deleteGroup(contextMenu.group)}><Trash2 size={14} />Eliminar grupo…</button>
+        </div>
+      )}
       {modalOpen && <ConnectionModal
         profile={editingProfile}
         identityRequired={Boolean(editingProfile && identityRequiredProfileId === editingProfile.id)}
