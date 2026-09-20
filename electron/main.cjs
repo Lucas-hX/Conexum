@@ -39,6 +39,7 @@ const sessionConnections = new Map()
 const telemetryCache = new Map()
 const transferJobs = new Map()
 const transferSnapshots = new Map()
+const transferRetrySources = new Map()
 const localFileGrants = new Map()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
 // `/tmp` intentionally keeps the Unix socket path short. macOS exposes a much
@@ -53,6 +54,18 @@ function sendToRenderer(sender, channel, payload) {
 }
 
 function publishTransfer(job, update) {
+  const canRetry = update.status === 'error' || update.status === 'canceled'
+  if (canRetry) {
+    transferRetrySources.set(job.id, {
+      sessionId: job.sessionId,
+      direction: job.direction,
+      localPath: job.localPath,
+      remotePath: job.remotePath,
+      name: job.name,
+    })
+  } else if (update.status === 'completed') {
+    transferRetrySources.delete(job.id)
+  }
   const snapshot = {
     transferId: job.id,
     sessionId: job.sessionId,
@@ -61,12 +74,16 @@ function publishTransfer(job, update) {
     progress: update.progress ?? job.progress,
     status: update.status,
     error: update.error,
+    canRetry,
     updatedAt: Date.now(),
   }
   transferSnapshots.set(job.id, snapshot)
   if (transferSnapshots.size > 100) {
     const oldest = [...transferSnapshots.values()].sort((left, right) => left.updatedAt - right.updatedAt)[0]
-    if (oldest) transferSnapshots.delete(oldest.transferId)
+    if (oldest) {
+      transferSnapshots.delete(oldest.transferId)
+      transferRetrySources.delete(oldest.transferId)
+    }
   }
   sendToRenderer(job.sender, 'sftp:transfer-progress', snapshot)
 }
@@ -86,6 +103,19 @@ function validateLocalPath(localPath, mode) {
   if (!grant || grant.mode !== mode || grant.expiresAt < Date.now()) throw new Error('Volvé a seleccionar el archivo local.')
   if (mode === 'upload' && !fs.statSync(localPath).isFile()) throw new Error('El archivo local no es válido.')
   if (mode === 'download' && !fs.existsSync(path.dirname(localPath))) throw new Error('La carpeta local no existe.')
+  return localPath
+}
+
+function validateRetryLocalPath(localPath, mode) {
+  if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || localPath.length > 4_096 || /[\r\n\0]/.test(localPath)) {
+    throw new Error('La ruta local guardada ya no es válida.')
+  }
+  try {
+    if (mode === 'upload' && !fs.statSync(localPath).isFile()) throw new Error('missing')
+    if (mode === 'download' && !fs.statSync(path.dirname(localPath)).isDirectory()) throw new Error('missing')
+  } catch {
+    throw new Error(mode === 'upload' ? 'El archivo local original ya no está disponible.' : 'La carpeta de descarga ya no está disponible.')
+  }
   return localPath
 }
 
@@ -225,6 +255,25 @@ const transferQueue = new TransferQueue(async (job) => {
     })
   }
 })
+
+function enqueueTransfer(sender, source) {
+  const transferId = crypto.randomUUID()
+  const job = {
+    id: transferId,
+    ...source,
+    progress: 0,
+    sender,
+    cancel: null,
+    onCanceled: () => {
+      transferJobs.delete(transferId)
+      publishTransfer(job, { progress: 0, status: 'canceled' })
+    },
+  }
+  transferJobs.set(transferId, job)
+  publishTransfer(job, { progress: 0, status: 'queued' })
+  transferQueue.enqueue(job)
+  return { transferId }
+}
 
 function connectionCacheKey(connection) {
   return crypto.createHash('sha256').update(JSON.stringify({
@@ -416,26 +465,31 @@ function registerSftpHandlers() {
     const validatedLocalPath = validateLocalPath(localPath, direction)
     const validatedRemotePath = validateRemotePath(remotePath)
     const safeName = typeof name === 'string' && name.length <= 512 && !/[\r\n\0]/.test(name) ? name : path.basename(direction === 'upload' ? validatedLocalPath : validatedRemotePath)
-    const transferId = crypto.randomUUID()
-    const job = {
-      id: transferId,
+    return enqueueTransfer(event.sender, {
       sessionId,
       direction,
       localPath: validatedLocalPath,
       remotePath: validatedRemotePath,
       name: safeName,
-      progress: 0,
-      sender: event.sender,
-      cancel: null,
-      onCanceled: () => {
-        transferJobs.delete(transferId)
-        publishTransfer(job, { progress: 0, status: 'canceled' })
-      },
+    })
+  })
+
+  ipcMain.handle('sftp:retry-transfer', (event, { transferId } = {}) => {
+    if (!isValidSessionId(transferId)) throw new Error('Transferencia inválida.')
+    const source = transferRetrySources.get(transferId)
+    if (!source) throw new Error('Esta transferencia ya no se puede reintentar.')
+    sessionContext(source.sessionId)
+    validateRetryLocalPath(source.localPath, source.direction)
+    validateRemotePath(source.remotePath)
+
+    transferRetrySources.delete(transferId)
+    const previous = transferSnapshots.get(transferId)
+    if (previous) {
+      const updated = { ...previous, canRetry: false, updatedAt: Date.now() }
+      transferSnapshots.set(transferId, updated)
+      sendToRenderer(event.sender, 'sftp:transfer-progress', updated)
     }
-    transferJobs.set(transferId, job)
-    publishTransfer(job, { progress: 0, status: 'queued' })
-    transferQueue.enqueue(job)
-    return { transferId }
+    return enqueueTransfer(event.sender, source)
   })
 
   ipcMain.on('sftp:cancel-transfer', (_event, { transferId } = {}) => {
@@ -520,6 +574,7 @@ function registerSshHandlers() {
 function closeAllSessions() {
   transferQueue.clear()
   transferJobs.clear()
+  transferRetrySources.clear()
   sessionConnections.clear()
   sessions.closeAll()
 }

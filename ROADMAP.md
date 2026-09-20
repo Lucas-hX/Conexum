@@ -91,14 +91,14 @@ Objetivo: navegar y mover archivos sin abandonar la sesión SSH.
 - [x] Crear carpetas, mover, renombrar y eliminar con confirmación.
 - [x] Incorporar arrastrar y soltar.
 - [x] Mostrar una cola de transferencias compacta con progreso y cancelación.
-- Reintentar transferencias interrumpidas cuando sea seguro.
+- [x] Permitir el reintento manual y seguro de transferencias interrumpidas.
 - [x] Permitir que el panel se abra, cierre y redimensione sin afectar la terminal.
 
 ### Criterio de salida
 
 El usuario puede transferir archivos de forma confiable y observar el progreso sin bloquear una sesión interactiva.
 
-**Estado:** primera versión implementada. El reintento asistido de transferencias interrumpidas permanece como mejora incremental.
+**Estado:** implementada para pruebas locales, incluido el reintento manual de transferencias fallidas o canceladas.
 
 ## Entrega 0.5 — Editor remoto
 
@@ -118,19 +118,21 @@ Objetivo: revisar y editar archivos remotos con una experiencia similar a un edi
 
 El usuario puede abrir, modificar y guardar un archivo de texto remoto sin riesgo de sobrescribir silenciosamente cambios externos.
 
-## Entrega 0.6 — Contexto de agentes y Codex
+## Entrega 0.6 — Contexto de agentes
 
-Objetivo: reconocer herramientas de agentes ejecutadas en una terminal y conectar su actividad con el editor remoto.
+Objetivo: reconocer herramientas de agentes ejecutadas en una terminal mediante una arquitectura agnóstica, comenzando por Codex y dejando adaptadores previstos para OpenCode y Claude.
 
+- Definir una interfaz común de adaptadores de agentes, sin acoplar la UI a un proveedor.
 - Incorporar eventos semánticos del shell, como OSC 133 o hooks equivalentes.
-- Detectar el inicio y finalización del comando `codex` sin analizar visualmente la terminal.
+- Implementar primero el adaptador de Codex.
+- Detectar el inicio y finalización de `codex`, `opencode` y `claude` sin analizar visualmente la terminal.
 - Mostrar un indicador discreto con agente, estado y directorio de trabajo.
 - Identificar el repositorio activo de forma segura.
 - Mostrar archivos creados o modificados mediante el estado de Git.
 - Permitir abrir esos archivos en el editor remoto.
 - Investigar una fuente de eventos estructurados de Codex para estados más precisos.
 - Diferenciar claramente archivos modificados de archivos simplemente leídos.
-- Diseñar adaptadores para otros agentes sin acoplar la aplicación a uno solo.
+- Agregar adaptadores de OpenCode y Claude cuando sus fuentes de eventos puedan validarse.
 - Hacer la observación explícita, visible y configurable por perfil.
 
 ### Presentación prevista
@@ -150,7 +152,7 @@ Objetivo: producir una versión instalable para pruebas más amplias.
 - Pruebas unitarias para validación de perfiles y argumentos SSH.
 - Pruebas de integración para procesos, reconexión y cierre.
 - Pruebas visuales de los estados principales.
-- Persistencia opcional de pestañas y distribución.
+- Confirmar el cierre explícito de todas las conexiones y vistas al salir; no persistir sesiones por diseño.
 - Recuperación limpia después de un cierre inesperado.
 - Bundle universal cuando las dependencias nativas lo permitan.
 - Firma con Developer ID y notarización de Apple.
