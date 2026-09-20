@@ -3,6 +3,7 @@ import type { DragEvent } from 'react'
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  ChevronDown,
   ChevronUp,
   Eye,
   EyeOff,
@@ -70,6 +71,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [transfers, setTransfers] = useState<SftpTransferProgress[]>([])
+  const [transfersExpanded, setTransfersExpanded] = useState(false)
   const directoryRef = useRef(directory)
   const selected = entries.find((entry) => entry.path === selectedPath) ?? null
 
@@ -109,10 +111,14 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
     if (!api) return
     let mounted = true
     void api.transfers(sessionId).then((items) => {
-      if (mounted) setTransfers(items)
+      if (mounted) {
+        setTransfers(items)
+        setTransfersExpanded(items.some((item) => item.status === 'queued' || item.status === 'active'))
+      }
     })
     const removeListener = api.onTransferProgress((progress) => {
       if (progress.sessionId !== sessionId) return
+      if (progress.status === 'queued' || progress.status === 'active') setTransfersExpanded(true)
       setTransfers((current) => {
         const next = current.some((item) => item.transferId === progress.transferId)
           ? current.map((item) => item.transferId === progress.transferId ? progress : item)
@@ -267,17 +273,20 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose }:
       {dragging && <div className="sftp-dropzone"><ArrowUpFromLine size={24} /><strong>Soltá para subir</strong><span>{directory}</span></div>}
 
       {transfers.length > 0 && (
-        <div className="transfer-queue">
-          <div className="transfer-heading"><span>TRANSFERENCIAS</span><small>{transfers.filter((item) => item.status === 'queued' || item.status === 'active').length} activas</small></div>
-          {transfers.map((transfer) => (
+        <div className={`transfer-queue ${transfersExpanded ? 'expanded' : 'collapsed'}`}>
+          <button className="transfer-heading" onClick={() => setTransfersExpanded((current) => !current)} aria-expanded={transfersExpanded}>
+            <span><ChevronDown size={12} />TRANSFERENCIAS</span>
+            <small>{transfers.filter((item) => item.status === 'queued' || item.status === 'active').length} activas</small>
+          </button>
+          {transfersExpanded && <div className="transfer-items">{transfers.map((transfer) => (
             <div className={`transfer-row ${transfer.status}`} key={transfer.transferId} title={transfer.error}>
-              {transfer.direction === 'upload' ? <ArrowUpFromLine size={13} /> : <ArrowDownToLine size={13} />}
+              {transfer.direction === 'upload' ? <ArrowUpFromLine size={12} /> : <ArrowDownToLine size={12} />}
               <span>{transfer.name}</span>
               <div className="transfer-progress"><i style={{ width: `${transfer.progress}%` }} /></div>
               <small>{transfer.status === 'active' ? `${transfer.progress}%` : transferStatusLabel[transfer.status]}</small>
-              {(transfer.status === 'queued' || transfer.status === 'active') && <button onClick={() => window.conexum?.sftp.cancelTransfer(transfer.transferId)} aria-label={`Cancelar ${transfer.name}`}><X size={12} /></button>}
+              {(transfer.status === 'queued' || transfer.status === 'active') && <button onClick={() => window.conexum?.sftp.cancelTransfer(transfer.transferId)} aria-label={`Cancelar ${transfer.name}`}><X size={11} /></button>}
             </div>
-          ))}
+          ))}</div>}
         </div>
       )}
     </aside>
