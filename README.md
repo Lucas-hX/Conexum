@@ -8,7 +8,7 @@
 ![Conexum welcome banner](public/brand/conexum-welcome-banner.png)
 
 > [!IMPORTANT]
-> Conexum está en una etapa **alpha temprana**. Las conexiones SSH y las sesiones múltiples ya funcionan, pero todavía no existe una aplicación empaquetada o firmada para distribuir.
+> Conexum está en una etapa **alpha temprana**. Ya es posible generar una aplicación local para pruebas, pero todavía no está firmada ni notarizada para distribución pública.
 
 ## Qué es Conexum
 
@@ -28,9 +28,12 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 - Integración con `ssh-agent` y macOS Keychain para las passphrases.
 - Panel lateral plegable y redimensionable.
 - Cierre individual de sesiones con confirmación.
-- Identidad visual inicial de Conexum.
+- Identidad nativa de Conexum en la ventana, el Dock, los menús y el diálogo Acerca de.
+- Pruebas automatizadas para argumentos SSH, validación de IPC y limpieza de sesiones.
+- Empaquetado local reproducible como `Conexum.app`.
+- Validación y paquete de prueba automáticos en GitHub Actions.
 
-Todavía están pendientes el explorador SFTP, el editor remoto, la telemetría del servidor, el empaquetado como aplicación macOS y otras mejoras descritas en el [roadmap](ROADMAP.md).
+Todavía están pendientes el explorador SFTP, el editor remoto, la telemetría del servidor, la firma y notarización para distribución pública y otras mejoras descritas en el [roadmap](ROADMAP.md).
 
 ## Requisitos
 
@@ -63,14 +66,25 @@ pnpm run desktop
 # Compilar y validar TypeScript
 pnpm run build
 
+# Ejecutar las pruebas automatizadas
+pnpm run test
+
+# Ejecutar pruebas y build de producción
+pnpm run check
+
 # Abrir la interfaz en un navegador, sin conexiones SSH reales
 pnpm run dev
 
 # Compilar y ejecutar la aplicación Electron completa
 pnpm run desktop
+
+# Generar una aplicación local sin firma
+pnpm run package:mac
 ```
 
 La conexión SSH real sólo está disponible dentro de Electron. La versión del navegador se utiliza para desarrollar y revisar la interfaz.
+
+El paquete local se genera en `release/mac-arm64/Conexum.app` en Apple Silicon o en el directorio equivalente de Intel. Al no estar firmado, macOS puede pedir una confirmación adicional antes de abrirlo. Los pull requests y cambios en `main` también ejecutan estas comprobaciones en GitHub Actions y producen un ZIP de prueba descargable durante 14 días.
 
 ## Primer uso
 
@@ -98,7 +112,7 @@ Antes de enviar cambios:
 ```bash
 pnpm install
 pnpm run rebuild:native
-pnpm run build
+pnpm run check
 pnpm run desktop
 ```
 
@@ -110,6 +124,18 @@ Al probar una funcionalidad, indicá:
 - shell remoto utilizado;
 - pasos para reproducir el comportamiento;
 - resultado esperado y resultado observado.
+
+La matriz mínima para cambios de escritorio es:
+
+| Área | Apple Silicon | Intel |
+| --- | --- | --- |
+| Inicio y navegación | Obligatorio antes de publicar | Verificación de colaborador |
+| Dos sesiones del mismo perfil | Obligatorio antes de publicar | Verificación de colaborador |
+| Cierre de una pestaña sin afectar otra | Obligatorio antes de publicar | Verificación de colaborador |
+| Importación de SSH config e IdentityFile | Obligatorio antes de publicar | Verificación de colaborador |
+| Generación y apertura de `Conexum.app` | Automático y manual | Verificación de colaborador |
+
+El workflow automático verifica el entorno macOS hospedado por GitHub. Antes de una publicación pública, Apple Silicon e Intel deberán validarse también de forma manual en hardware real.
 
 Las contribuciones deberían mantener los principios centrales del proyecto: terminal primero, poco ruido visual, reutilización de herramientas maduras y ningún secreto almacenado de forma insegura.
 
@@ -130,4 +156,4 @@ Las contribuciones deberían mantener los principios centrales del proyecto: ter
 
 ## Estado de distribución
 
-Por el momento Conexum se ejecuta como proyecto de desarrollo. El cambio de identidad completa de Electron, el bundle `.app`, la firma, la notarización y el instalador se encuentran planificados en el roadmap.
+`pnpm run package:mac` genera un bundle local identificado como Conexum. Este paquete sirve para desarrollo y pruebas entre colaboradores; aún no está firmado, notarizado ni acompañado por un instalador. Esos pasos permanecen planificados antes de una distribución pública.

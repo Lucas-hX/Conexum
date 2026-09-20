@@ -1,0 +1,56 @@
+name: macOS checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native dependencies for Electron
+        run: pnpm run rebuild:native
+
+      - name: Run tests and production build
+        run: pnpm run check
+
+      - name: Package Conexum.app
+        run: pnpm run package:mac
+
+      - name: Archive unsigned test application
+        run: |
+          APP_PATH=$(find release -maxdepth 2 -type d -name "Conexum.app" -print -quit)
+          test -n "$APP_PATH"
+          ditto -c -k --keepParent "$APP_PATH" Conexum-macOS.zip
+
+      - name: Upload test application
+        uses: actions/upload-artifact@v4
+        with:
+          name: Conexum-macOS-unsigned
+          path: Conexum-macOS.zip
+          if-no-files-found: error
+          retention-days: 14

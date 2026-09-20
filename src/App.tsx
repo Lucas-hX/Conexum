@@ -160,7 +160,7 @@ const TerminalView = forwardRef<TerminalHandle, {
       if (!terminal || !fitAddon) return
 
       if (!window.conexum) {
-        terminal.writeln('\r\n\x1b[31m[Conexum] SSH real sólo está disponible dentro de la aplicación Electron.\x1b[0m')
+        terminal.writeln('\r\n\x1b[31m[Conexum] SSH real sólo está disponible dentro de la aplicación de escritorio.\x1b[0m')
         terminal.writeln('Ejecutá: pnpm run desktop')
         onStatusChange('error')
         return
@@ -661,7 +661,7 @@ export function App() {
               })}
             </div>
             <button className="new-tab" onClick={openNewProfile} aria-label="Nueva conexión"><Plus size={17} /></button>
-            <div className="tab-spacer" /><span className="prototype-badge">OPENSSH DE macOS</span>
+            <div className="tab-spacer" />
           </div>
 
           <div className={`content-row ${activeTool && mainView === 'terminal' ? 'panel-open' : ''}`}>

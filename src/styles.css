@@ -499,17 +499,6 @@ button {
   flex: 0 0 8px;
 }
 
-.prototype-badge {
-  align-self: center;
-  margin-right: 14px;
-  padding: 3px 7px;
-  border: 1px solid #32516c;
-  border-radius: 5px;
-  color: #6594b9;
-  font-size: 9px;
-  letter-spacing: .12em;
-}
-
 .content-row {
   min-width: 0;
   min-height: 0;
