@@ -1,16 +1,26 @@
 {
   "name": "conexum",
+  "productName": "Conexum",
   "private": true,
   "version": "0.1.0",
-  "description": "Terminal-first SSH connection manager for macOS",
+  "description": "A simple, terminal-first SSH connection manager for macOS",
+  "author": "Lucas-hX",
+  "homepage": "https://github.com/Lucas-hX/Conexum",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Lucas-hX/Conexum.git"
+  },
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node --test tests/*.test.cjs",
+    "check": "pnpm run test && pnpm run build",
     "preview": "vite preview",
     "desktop": "tsc -b && vite build && electron .",
-    "rebuild:native": "electron-rebuild -f -w node-pty"
+    "rebuild:native": "electron-rebuild -f -w node-pty",
+    "package:mac": "pnpm run build && electron-builder --mac dir"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -27,7 +37,33 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.4.2",
+    "electron-builder": "^26.15.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
+  },
+  "build": {
+    "appId": "com.lucashx.conexum",
+    "productName": "Conexum",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "public/brand/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "public/brand/conexum-icon.png",
+      "target": [
+        "dir"
+      ]
+    }
   }
 }

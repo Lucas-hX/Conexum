@@ -1,87 +1,27 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
 const crypto = require('node:crypto')
 const { execFileSync } = require('node:child_process')
 const pty = require('node-pty')
+const {
+  SessionRegistry,
+  buildSshArgs,
+  expandHome,
+  isValidSessionId,
+  processEnvForSsh,
+  readHostAliases,
+  validateConnection,
+  validateFilePath,
+  validateResize,
+  validateTerminalInput,
+} = require('./ssh-core.cjs')
 
-const sessions = new Map()
+app.setName('Conexum')
+
+const sessions = new SessionRegistry()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
-
-function isSafeText(value, maxLength = 255) {
-  return typeof value === 'string' && value.length > 0 && value.length <= maxLength && !/[\r\n\0]/.test(value)
-}
-
-function expandHome(filePath) {
-  if (!filePath) return ''
-  if (filePath === '~') return os.homedir()
-  if (filePath.startsWith('~/')) return path.join(os.homedir(), filePath.slice(2))
-  return path.resolve(filePath)
-}
-
-function validateFilePath(filePath, label) {
-  if (!isSafeText(filePath, 2048) || /[\r\n\0]/.test(filePath)) throw new Error(`${label} no es válido.`)
-  const resolved = expandHome(filePath)
-  if (!path.isAbsolute(resolved) || !fs.existsSync(resolved)) throw new Error(`${label} no existe.`)
-  return resolved
-}
-
-function validateConnection(request) {
-  if (!request || typeof request !== 'object') throw new Error('Solicitud de conexión inválida.')
-
-  const { sessionId, profile, cols, rows } = request
-  if (!isSafeText(sessionId, 80) || !/^[a-zA-Z0-9-]+$/.test(sessionId)) {
-    throw new Error('Identificador de sesión inválido.')
-  }
-  if (!profile || typeof profile !== 'object') throw new Error('Perfil SSH inválido.')
-
-  const host = String(profile.host || '').trim()
-  const username = String(profile.username || '').trim()
-  const port = Number(profile.port)
-  const sshAlias = profile.sshAlias ? String(profile.sshAlias).trim() : ''
-  const configFile = profile.configFile ? validateFilePath(String(profile.configFile), 'El archivo de configuración') : ''
-  const identityFile = profile.identityFile ? validateFilePath(String(profile.identityFile), 'El archivo de identidad') : ''
-
-  if (!isSafeText(host) || host.startsWith('-') || /\s/.test(host)) {
-    throw new Error('El servidor no es válido.')
-  }
-  if (!isSafeText(username, 64) || username.startsWith('-') || !/^[a-zA-Z0-9._-]+$/.test(username)) {
-    throw new Error('El usuario SSH no es válido.')
-  }
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('El puerto SSH debe estar entre 1 y 65535.')
-  }
-  if (sshAlias && (sshAlias.startsWith('-') || /\s/.test(sshAlias))) {
-    throw new Error('El alias SSH no es válido.')
-  }
-
-  return {
-    sessionId,
-    host,
-    username,
-    port,
-    sshAlias,
-    configFile,
-    identityFile,
-    cols: Number.isInteger(cols) ? Math.min(Math.max(cols, 20), 500) : 100,
-    rows: Number.isInteger(rows) ? Math.min(Math.max(rows, 5), 200) : 30,
-  }
-}
-
-function readHostAliases(configText) {
-  const aliases = []
-  for (const rawLine of configText.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith('#')) continue
-    const match = line.match(/^Host\s+(.+)$/i)
-    if (!match) continue
-    for (const alias of match[1].trim().split(/\s+/)) {
-      if (!alias.startsWith('!') && !/[?*]/.test(alias) && !aliases.includes(alias)) aliases.push(alias)
-    }
-  }
-  return aliases
-}
 
 function resolveSshAlias(alias, configFile) {
   const output = execFileSync('/usr/bin/ssh', ['-G', '-F', configFile, alias], {
@@ -150,40 +90,13 @@ function registerProfileHandlers() {
   })
 }
 
-function processEnvForSsh() {
-  const allowed = ['HOME', 'USER', 'LOGNAME', 'PATH', 'LANG', 'LC_ALL', 'SSH_AUTH_SOCK', 'TMPDIR']
-  return Object.fromEntries(allowed.flatMap((key) => process.env[key] ? [[key, process.env[key]]] : []))
-}
-
 function registerSshHandlers() {
   ipcMain.handle('ssh:connect', (event, request) => {
     const connection = validateConnection(request)
     if (sessions.has(connection.sessionId)) throw new Error('La sesión ya existe.')
     const sender = event.sender
 
-    const args = [
-      '-tt',
-      '-o', 'ConnectTimeout=15',
-      '-o', 'ServerAliveInterval=30',
-      '-o', 'ServerAliveCountMax=3',
-      '-o', 'AddKeysToAgent=yes',
-      '-o', 'UseKeychain=yes',
-    ]
-
-    if (connection.configFile && connection.sshAlias) {
-      args.push(
-        '-F', connection.configFile,
-        '-o', `HostName=${connection.host}`,
-        '-p', String(connection.port),
-        '-l', connection.username,
-      )
-      if (connection.identityFile) args.push('-i', connection.identityFile, '-o', 'IdentitiesOnly=yes')
-      args.push(connection.sshAlias)
-    } else {
-      args.push('-p', String(connection.port))
-      if (connection.identityFile) args.push('-i', connection.identityFile, '-o', 'IdentitiesOnly=yes')
-      args.push(`${connection.username}@${connection.host}`)
-    }
+    const args = buildSshArgs(connection)
 
     const sshProcess = pty.spawn('/usr/bin/ssh', args, {
       name: 'xterm-256color',
@@ -197,7 +110,7 @@ function registerSshHandlers() {
       },
     })
 
-    sessions.set(connection.sessionId, sshProcess)
+    sessions.add(connection.sessionId, sshProcess)
 
     sshProcess.onData((data) => {
       if (!sender.isDestroyed()) {
@@ -206,7 +119,7 @@ function registerSshHandlers() {
     })
 
     sshProcess.onExit(({ exitCode, signal }) => {
-      sessions.delete(connection.sessionId)
+      sessions.remove(connection.sessionId)
       if (!sender.isDestroyed()) {
         sender.send('ssh:exit', {
           sessionId: connection.sessionId,
@@ -220,27 +133,34 @@ function registerSshHandlers() {
   })
 
   ipcMain.on('ssh:input', (_event, { sessionId, data } = {}) => {
-    if (!isSafeText(sessionId, 80) || typeof data !== 'string' || data.length > 64_000) return
-    sessions.get(sessionId)?.write(data)
+    const input = validateTerminalInput({ sessionId, data })
+    if (!input) return
+    sessions.get(input.sessionId)?.write(input.data)
   })
 
   ipcMain.on('ssh:resize', (_event, { sessionId, cols, rows } = {}) => {
-    const session = sessions.get(sessionId)
-    if (!session || !Number.isInteger(cols) || !Number.isInteger(rows)) return
-    session.resize(Math.min(Math.max(cols, 20), 500), Math.min(Math.max(rows, 5), 200))
+    const resize = validateResize({ sessionId, cols, rows })
+    if (!resize) return
+    sessions.get(resize.sessionId)?.resize(resize.cols, resize.rows)
   })
 
   ipcMain.on('ssh:disconnect', (_event, { sessionId } = {}) => {
-    const session = sessions.get(sessionId)
-    if (!session) return
-    session.kill()
-    sessions.delete(sessionId)
+    if (!isValidSessionId(sessionId)) return
+    sessions.close(sessionId)
   })
 }
 
 function closeAllSessions() {
-  for (const session of sessions.values()) session.kill()
-  sessions.clear()
+  sessions.closeAll()
+}
+
+function installApplicationMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]))
 }
 
 function createWindow() {
@@ -249,6 +169,7 @@ function createWindow() {
     height: 900,
     minWidth: 960,
     minHeight: 620,
+    title: 'Conexum',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#0b1016',
@@ -269,7 +190,15 @@ registerSshHandlers()
 registerProfileHandlers()
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin') app.dock?.setIcon(appIconPath)
+  app.setAppUserModelId('com.lucashx.conexum')
+  app.setAboutPanelOptions({
+    applicationName: 'Conexum',
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    iconPath: appIconPath,
+  })
+  installApplicationMenu()
+  if (process.platform === 'darwin') app.dock?.setIcon(nativeImage.createFromPath(appIconPath))
   createWindow()
 
   app.on('activate', () => {

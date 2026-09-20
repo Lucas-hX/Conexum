@@ -22,23 +22,28 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Inicio con conexiones recientes.
 - Panel de conexiones plegable y redimensionable.
 - Identidad visual inicial, íconos y banner.
+- Identidad nativa de Conexum en macOS y paquete `.app` local sin firma.
+- Pruebas automatizadas del núcleo SSH, mensajes de terminal y limpieza de sesiones.
+- Validación automática y paquete de prueba mediante GitHub Actions.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 
 Objetivo: que Conexum deje de presentarse como Electron y pueda probarse como una aplicación reconocible.
 
-- Quitar la etiqueta visual “OPENSSH DE macOS” de la barra de pestañas.
-- Definir nombre de producto, bundle identifier y metadatos de aplicación.
-- Aplicar el nombre Conexum al Dock, menús, ventana, diálogo Acerca de y procesos visibles.
-- Configurar el ícono de la aplicación en todos los tamaños necesarios.
-- Incorporar una herramienta de empaquetado para generar un `.app` local.
-- Agregar scripts de instalación, compilación y empaquetado reproducibles.
-- Documentar la matriz inicial de pruebas para Apple Silicon e Intel.
-- Añadir comprobaciones automáticas de TypeScript y build en GitHub Actions.
+- [x] Quitar la etiqueta visual “OPENSSH DE macOS” de la barra de pestañas.
+- [x] Definir nombre de producto, bundle identifier y metadatos de aplicación.
+- [x] Aplicar el nombre Conexum al Dock, menús, ventana, diálogo Acerca de y procesos visibles.
+- [x] Configurar el ícono de la aplicación para el bundle macOS.
+- [x] Incorporar una herramienta de empaquetado para generar un `.app` local.
+- [x] Agregar scripts de instalación, compilación y empaquetado reproducibles.
+- [x] Documentar la matriz inicial de pruebas para Apple Silicon e Intel.
+- [x] Añadir comprobaciones automáticas de pruebas, TypeScript, build y empaquetado en GitHub Actions.
 
 ### Criterio de salida
 
 Un colaborador puede clonar el repositorio, ejecutar la aplicación y generar un bundle local identificado completamente como Conexum.
+
+**Estado:** completada para pruebas locales. La firma y notarización permanecen en la Entrega 0.7.
 
 ## Entrega 0.3 — Contexto de sesión y observabilidad ligera
 
