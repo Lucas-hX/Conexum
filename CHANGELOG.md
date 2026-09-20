@@ -2,6 +2,13 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.5.2 — 2026-09-20
+
+### Mejorado
+
+- La cola de transferencias SFTP ocupa menos espacio, permanece al pie del panel y puede contraerse.
+- La cola se abre automáticamente cuando comienza una transferencia y queda contraída al reabrir un historial inactivo.
+
 ## 0.5.1 — 2026-09-20
 
 ### Corregido
