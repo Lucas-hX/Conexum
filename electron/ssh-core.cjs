@@ -37,12 +37,24 @@ case "$os" in
     ;;
 esac`
 
+// OpenSSH appends a temporary suffix while creating a multiplexing socket.
+// Keeping the configured path below this limit leaves enough room for that
+// suffix on macOS, whose Unix-domain socket paths are especially short.
+const MAX_CONTROL_PATH_BYTES = 72
+
 function isSafeText(value, maxLength = 255) {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength && !/[\r\n\0]/.test(value)
 }
 
 function isValidSessionId(sessionId) {
   return isSafeText(sessionId, 80) && /^[a-zA-Z0-9-]+$/.test(sessionId)
+}
+
+function validateControlPath(controlPath) {
+  if (!isSafeText(controlPath, 512) || !path.isAbsolute(controlPath) || Buffer.byteLength(controlPath) > MAX_CONTROL_PATH_BYTES) {
+    throw new Error('Ruta de multiplexación inválida o demasiado larga.')
+  }
+  return controlPath
 }
 
 function expandHome(filePath, homeDirectory = os.homedir()) {
@@ -141,8 +153,9 @@ function buildSshArgs(connection, options = {}) {
   ]
 
   if (options.controlPath) {
+    const controlPath = validateControlPath(options.controlPath)
     args.push(
-      '-S', options.controlPath,
+      '-S', controlPath,
       '-o', 'ControlMaster=auto',
       '-o', 'ControlPersist=60',
     )
@@ -154,7 +167,7 @@ function buildSshArgs(connection, options = {}) {
 }
 
 function buildTelemetrySshArgs(connection, controlPath) {
-  if (!isSafeText(controlPath, 512) || !path.isAbsolute(controlPath)) throw new Error('Ruta de multiplexación inválida.')
+  validateControlPath(controlPath)
 
   const args = [
     '-T',
@@ -305,6 +318,7 @@ module.exports = {
   parseTelemetrySample,
   readHostAliases,
   validateConnection,
+  validateControlPath,
   validateFilePath,
   validateResize,
   validateTerminalInput,

@@ -40,10 +40,11 @@ const transferJobs = new Map()
 const transferSnapshots = new Map()
 const localFileGrants = new Map()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
-const controlDirectory = path.join(os.tmpdir(), `conexum-ssh-${typeof process.getuid === 'function' ? process.getuid() : 'user'}`)
+// `/tmp` intentionally keeps the Unix socket path short. macOS exposes a much
+// longer per-user temp path and OpenSSH adds a temporary suffix while binding.
+const controlDirectory = fs.mkdtempSync(path.join('/tmp', 'cx-'))
 const execFileAsync = promisify(execFile)
 
-fs.mkdirSync(controlDirectory, { recursive: true, mode: 0o700 })
 fs.chmodSync(controlDirectory, 0o700)
 
 function sendToRenderer(sender, channel, payload) {
@@ -226,7 +227,7 @@ function connectionCacheKey(connection) {
 }
 
 function controlPathForConnection(cacheKey) {
-  return path.join(controlDirectory, cacheKey.slice(0, 24))
+  return path.join(controlDirectory, cacheKey.slice(0, 16))
 }
 
 async function collectTelemetry(context) {
@@ -568,4 +569,12 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   closeAllSessions()
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('will-quit', () => {
+  try {
+    fs.rmSync(controlDirectory, { recursive: true, force: true })
+  } catch {
+    // The OS will eventually clean an abandoned temporary directory.
+  }
 })

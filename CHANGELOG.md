@@ -2,6 +2,12 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.4.1 — 2026-09-20
+
+### Corregido
+
+- El socket de multiplexación SSH ahora utiliza una ruta corta y privada bajo `/tmp`, evitando el límite de rutas Unix de macOS.
+
 ## 0.4.0 — 2026-09-20
 
 ### Agregado
