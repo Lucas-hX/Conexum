@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Manual visual fixture: run pnpm dev, then open /tests/fixtures/editor-smoke.html?view=editor. No SSH connection is used. -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Editor smoke test</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window.conexum = {
+        platform: 'desktop',
+        sftp: {
+          list: async () => ({
+            directory: '/home/demo',
+            entries: [
+              { name: 'sample.md', path: '/home/demo/sample.md', type: 'file', size: 43, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
+              { name: 'sample.py', path: '/home/demo/sample.py', type: 'file', size: 24, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
+              { name: 'sample.error', path: '/home/demo/sample.error', type: 'file', size: 0, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
+            ],
+          }),
+        },
+        editor: {
+          getContext: async () => ({ sessionId: 'smoke-test', profileName: 'Local fixture', initialDirectory: '/home/demo', initialPath: '/home/demo/sample.md' }),
+          readText: async (_sessionId, remotePath) => {
+            if (remotePath.endsWith('.error')) throw new Error('Error de prueba al leer el archivo.')
+            return { path: remotePath, name: remotePath.split('/').at(-1), content: remotePath.endsWith('.py') ? 'print("Visible Python")\n' : '# Visible markdown\n\nThis file has content.\n', size: 43, modified: 'Jan 01 2026', permissions: '-rw-r--r--', fingerprint: '0'.repeat(64) }
+          },
+          onOpenFile: () => () => {},
+          setState: () => {},
+          closeWindow: async () => {},
+        },
+      }
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
