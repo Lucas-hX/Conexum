@@ -24,6 +24,6 @@ test('creates a versioned backup without credential fields', () => {
 test('parses valid backups and rejects incompatible or unsafe data', () => {
   assert.deepEqual(parseBackup(JSON.stringify(createBackup([profile]))), [profile])
   assert.throws(() => parseBackup('{"format":"other","version":1,"profiles":[]}'), /compatible/i)
-  assert.throws(() => parseBackup(JSON.stringify({ format: 'conexum-connections', version: 1, profiles: [{ ...profile, host: 'bad\nhost' }] })), /servidor no es válido/i)
-  assert.throws(() => parseBackup(JSON.stringify({ format: 'conexum-connections', version: 1, profiles: [{ ...profile, port: 99999 }] })), /puerto/i)
+  assert.throws(() => parseBackup(JSON.stringify({ format: 'conexum-connections', version: 1, profiles: [{ ...profile, host: 'bad\nhost' }] })), /host is not valid/i)
+  assert.throws(() => parseBackup(JSON.stringify({ format: 'conexum-connections', version: 1, profiles: [{ ...profile, port: 99999 }] })), /port/i)
 })

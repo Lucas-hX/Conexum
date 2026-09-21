@@ -1,14 +1,14 @@
-# Integración del directorio remoto
+# Remote directory integration
 
-Conexum puede mostrar el directorio actual de cada pestaña cuando el shell remoto emite la secuencia estándar **OSC 7**. La integración es opcional, no ejecuta consultas periódicas y Conexum no inspecciona el texto renderizado de la terminal.
+Conexum can show the current directory of each tab when the remote shell emits the standard **OSC 7** sequence. This integration is optional, does not run periodic queries, and never inspects the text rendered in the terminal.
 
-Es posible que el servidor ya emita OSC 7. En ese caso no hace falta modificar nada. Si la barra inferior continúa mostrando `Ruta —`, hacé clic en ese texto dentro de Conexum: la aplicación muestra los bloques para Bash, Zsh y Fish, listos para copiar. Pegá el bloque en la terminal SSH para probarlo en esa sesión; después agregalo al archivo de inicio indicado para conservarlo.
+Your server may already emit OSC 7. If so, no changes are necessary. If the status bar still shows `Path —`, select that text in Conexum to open ready-to-copy snippets for Bash, Zsh, and Fish. Paste the matching snippet into the SSH terminal to try it in that session, then add it to the indicated startup file to keep it.
 
-Una consulta SSH nueva no puede leer de forma confiable el directorio de otra terminal interactiva. Por eso abrir SFTP o Editor no puede «forzar» un `pwd` de la pestaña sin cooperación del shell remoto. Cuando no hay ruta informada, ambos se abren directamente en el home remoto y podés cambiar de carpeta escribiendo una ruta absoluta en su explorador. Conexum no envía comandos a tu terminal: la integración es voluntaria y visible.
+A new SSH process cannot reliably read the directory of another interactive terminal. Therefore, opening SFTP or Editor cannot force a `pwd` request in the tab without help from the remote shell. When no path is reported, both tools open directly in the remote home directory, and you can navigate elsewhere by entering an absolute path. Conexum never sends commands to your terminal: the integration is voluntary and visible.
 
 ## Zsh
 
-Agregar a `~/.zshrc`:
+Add to `~/.zshrc`:
 
 ```zsh
 function _conexum_osc7_precmd() {
@@ -20,7 +20,7 @@ add-zsh-hook precmd _conexum_osc7_precmd
 
 ## Bash
 
-Agregar a `~/.bashrc`:
+Add to `~/.bashrc`:
 
 ```bash
 __conexum_osc7() {
@@ -31,7 +31,7 @@ PROMPT_COMMAND="__conexum_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 
 ## Fish
 
-Agregar a `~/.config/fish/config.fish`:
+Add to `~/.config/fish/config.fish`:
 
 ```fish
 function __conexum_osc7 --on-event fish_prompt
@@ -39,11 +39,11 @@ function __conexum_osc7 --on-event fish_prompt
 end
 ```
 
-Abrí una sesión SSH nueva después de modificar la configuración. Cada cambio de directorio aparecerá en la barra inferior después de dibujarse el siguiente prompt.
+Open a new SSH session after changing the configuration. Each directory change will appear in the status bar after the next prompt is drawn.
 
-## Privacidad y seguridad
+## Privacy and security
 
-- La ruta se recibe como un evento semántico del emulador de terminal.
-- No se registran pulsaciones ni se analiza el contenido visible de xterm.
-- La ruta sólo vive en memoria mientras la pestaña permanece abierta.
-- Una ruta recibida se limita a un URI `file://` absoluto y nunca se ejecuta como comando.
+- The path is received as a semantic event from the terminal emulator.
+- Conexum does not record keystrokes or inspect visible xterm content.
+- The path exists only in memory while the tab remains open.
+- A received path is limited to an absolute `file://` URI and is never executed as a command.
