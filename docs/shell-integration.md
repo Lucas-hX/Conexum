@@ -4,7 +4,7 @@ Conexum puede mostrar el directorio actual de cada pestaña cuando el shell remo
 
 Es posible que el servidor ya emita OSC 7. En ese caso no hace falta modificar nada. Si la barra inferior continúa mostrando `Ruta —`, hacé clic en ese texto dentro de Conexum: la aplicación muestra los bloques para Bash, Zsh y Fish, listos para copiar. Pegá el bloque en la terminal SSH para probarlo en esa sesión; después agregalo al archivo de inicio indicado para conservarlo.
 
-Una consulta SSH nueva no puede leer de forma confiable el directorio de otra terminal interactiva. Por eso abrir SFTP o Editor no puede «forzar» un `pwd` de la pestaña sin cooperación del shell remoto. Conexum no envía comandos a tu terminal: la integración es voluntaria y visible.
+Una consulta SSH nueva no puede leer de forma confiable el directorio de otra terminal interactiva. Por eso abrir SFTP o Editor no puede «forzar» un `pwd` de la pestaña sin cooperación del shell remoto. Cuando no hay ruta informada, ambos se abren directamente en el home remoto y podés cambiar de carpeta escribiendo una ruta absoluta en su explorador. Conexum no envía comandos a tu terminal: la integración es voluntaria y visible.
 
 ## Zsh
 

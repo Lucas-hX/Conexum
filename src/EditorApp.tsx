@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
-import { ChevronDown, ChevronRight, File, Folder, LoaderCircle, RefreshCw, Save, X } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, X } from 'lucide-react'
 import type { RemoteTextFile, SftpEntry } from './conexum'
 
 loader.config({ monaco })
@@ -106,6 +106,8 @@ export function EditorApp() {
   const [treeKey, setTreeKey] = useState(0)
   const [treeSelectedPath, setTreeSelectedPath] = useState<string | null>(null)
   const [rootDirectory, setRootDirectory] = useState<string | null>(null)
+  const [pathDraft, setPathDraft] = useState('')
+  const navigationId = useRef(0)
   const activeDocument = documents.find((document) => document.path === activePath) ?? null
   const dirty = documents.some((document) => document.draft !== document.content)
   const saving = documents.some((document) => document.saving)
@@ -130,31 +132,39 @@ export function EditorApp() {
     }
   }, [context, documents])
 
+  const navigateDirectory = useCallback(async (nextContext: EditorContext, directory: string | null, fallbackToHome = false) => {
+    const requestId = ++navigationId.current
+    const api = window.conexum?.sftp
+    if (!api) return
+    setError(null)
+    try {
+      let result
+      try {
+        result = await api.list(nextContext.sessionId, directory ?? undefined)
+      } catch (initialError) {
+        if (!fallbackToHome || !directory) throw initialError
+        result = await api.list(nextContext.sessionId)
+      }
+      if (requestId !== navigationId.current) return
+      setRootDirectory(result.directory)
+      setPathDraft(result.directory)
+      setTreeKey((current) => current + 1)
+    } catch (directoryError) {
+      if (requestId === navigationId.current) setError(errorMessage(directoryError))
+    }
+  }, [])
+
   useEffect(() => {
     let removeOpenListener: (() => void) | undefined
-    const navigateDirectory = async (nextContext: EditorContext, directory: string | null) => {
-      if (directory) {
-        setRootDirectory(directory)
-        setTreeKey((current) => current + 1)
-        return
-      }
-      try {
-        const result = await window.conexum?.sftp.list(nextContext.sessionId)
-        if (result) {
-          setRootDirectory(result.directory)
-          setTreeKey((current) => current + 1)
-        }
-      } catch (directoryError) {
-        setError(errorMessage(directoryError))
-      }
-    }
+    let mounted = true
     void window.conexum?.editor.getContext().then((nextContext) => {
+      if (!mounted) return
       setContext(nextContext)
       document.title = `Conexum Editor — ${nextContext.profileName}`
-      void navigateDirectory(nextContext, nextContext.initialDirectory)
+      void navigateDirectory(nextContext, nextContext.initialDirectory, true)
       if (nextContext.initialPath) void openFileAfterContext(nextContext, nextContext.initialPath)
       removeOpenListener = window.conexum?.editor.onOpenFile(({ remotePath, initialDirectory }) => {
-        void navigateDirectory(nextContext, initialDirectory)
+        void navigateDirectory(nextContext, initialDirectory, true)
         if (remotePath) void openFileAfterContext(nextContext, remotePath)
       })
     }).catch((contextError) => setError(errorMessage(contextError)))
@@ -172,8 +182,8 @@ export function EditorApp() {
         setLoadingPath(null)
       }
     }
-    return () => removeOpenListener?.()
-  }, [])
+    return () => { mounted = false; navigationId.current++; removeOpenListener?.() }
+  }, [navigateDirectory])
 
   useEffect(() => {
     window.conexum?.editor.setState({ dirty, saving })
@@ -257,7 +267,13 @@ export function EditorApp() {
       </header>
       <section className="editor-workspace">
         <aside className="editor-explorer">
-          <div className="editor-explorer-heading"><span title={rootDirectory ?? (error ? 'Carpeta no disponible' : 'Cargando carpeta…')}>{rootDirectory ?? (error ? 'Carpeta no disponible' : 'Cargando carpeta…')}</span><button onClick={() => setTreeKey((current) => current + 1)} aria-label="Actualizar árbol"><RefreshCw size={13} /></button></div>
+          <form className="editor-explorer-heading" onSubmit={(event) => { event.preventDefault(); if (context) void navigateDirectory(context, pathDraft.trim() || null) }}>
+            <span className="editor-path-label">EXPLORADOR</span>
+            <input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setPathDraft(rootDirectory ?? '') }} placeholder={rootDirectory ? undefined : 'Cargando carpeta…'} aria-label="Ruta remota del editor" title="Escribí una ruta absoluta y presioná Enter" spellCheck={false} />
+            <button className="editor-path-go" type="submit" disabled={!context} aria-label="Ir a la ruta escrita" title="Ir a la ruta"><ArrowRight size={13} /></button>
+            <button className="editor-path-home" type="button" disabled={!context} onClick={() => context && void navigateDirectory(context, null)} aria-label="Ir al home remoto" title="Home remoto"><Home size={13} /></button>
+            <button className="editor-path-refresh" type="button" disabled={!rootDirectory} onClick={() => setTreeKey((current) => current + 1)} aria-label="Actualizar árbol" title="Actualizar árbol"><RefreshCw size={13} /></button>
+          </form>
           {context && rootDirectory && <div className="editor-tree"><RemoteDirectory key={`${rootDirectory}:${treeKey}`} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPath={treeSelectedPath} onSelect={setTreeSelectedPath} /></div>}
         </aside>
         <section className="editor-main">

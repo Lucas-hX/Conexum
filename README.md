@@ -132,11 +132,11 @@ CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pesta
 
 ## Explorador SFTP
 
-Con una sesión SSH activa, presioná el icono de carpeta **SFTP** para abrir el panel lateral. El explorador comienza en el directorio de esa pestaña informado por OSC 7. Si no hay ruta disponible, Conexum explica cómo activar la integración y te deja elegir si preferís abrir el home remoto.
+Con una sesión SSH activa, presioná el icono de carpeta **SFTP** para abrir el panel lateral. El explorador comienza en la última ruta que informó esa pestaña mediante OSC 7. Si no hay ruta o ya no se puede abrir, comienza en el home remoto sin interrumpirte. Esa carpeta permanece abierta mientras navegás, aunque cambie la ruta de la terminal.
 
 Desde el panel se puede:
 
-- navegar con breadcrumbs, doble clic o escribiendo una ruta absoluta;
+- navegar con breadcrumbs, doble clic, el botón de home o el botón de lápiz para escribir una ruta absoluta;
 - ordenar por nombre, tamaño, permisos, propietario o fecha;
 - mostrar u ocultar archivos ocultos;
 - crear carpetas;
@@ -162,7 +162,7 @@ Con una pestaña seleccionada, **Diagnóstico** muestra únicamente datos saniti
 
 ## Conexum Editor
 
-Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El árbol se abre en el directorio actual informado por OSC 7; si no hay ruta, Conexum te lo indica antes de abrir el home remoto. Al abrir un archivo desde SFTP, muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
+Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El árbol comienza en la última ruta informada por la pestaña mediante OSC 7 o, si no está disponible, en el home remoto. Podés escribir otra ruta absoluta en el explorador del Editor y presionar Enter o el botón de flecha; el botón de home regresa al directorio inicial del usuario remoto. Al abrir Editor desde SFTP se conserva la carpeta explorada, y al abrir un archivo se muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
 
 La primera versión incluye:
 

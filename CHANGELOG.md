@@ -2,6 +2,19 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.6.4 — 2026-09-20
+
+### Mejorado
+
+- SFTP y Editor se abren directamente en la última ruta informada por la pestaña SSH o, si no existe o ya no es accesible, en el home remoto. La guía de OSC 7 queda opcional en la barra inferior.
+- SFTP muestra botones visibles para ir al home y escribir una ruta absoluta; Editor incorpora una barra de ruta propia y un botón de home.
+- Al abrir Editor desde SFTP se conserva la carpeta explorada, incluso si la terminal está situada en otra ruta.
+
+### Corregido
+
+- Una ruta manual inválida muestra un error sin reemplazar la carpeta que ya estaba abierta.
+- Las respuestas de navegación antiguas no pueden sobrescribir una ruta elegida después.
+
 ## 0.6.3 — 2026-09-20
 
 ### Corregido

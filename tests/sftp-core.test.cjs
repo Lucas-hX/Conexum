@@ -54,6 +54,7 @@ test('builds SFTP arguments over the existing multiplexed connection', () => {
 })
 
 test('builds safe list, mutation, and transfer commands', () => {
+  assert.equal(buildListBatch(), '@pwd\n@ls -lan\n')
   assert.equal(buildListBatch('/srv/app'), '@cd "/srv/app"\n@pwd\n@ls -lan\n')
   assert.equal(buildMutationBatch('mkdir', '/srv/new folder'), 'mkdir "/srv/new folder"\n')
   assert.equal(buildMutationBatch('rename', '/srv/old', '/srv/new'), 'rename "/srv/old" "/srv/new"\n')
@@ -98,6 +99,12 @@ lrwxr-xr-x    ? deploy staff          8 Mar 01 09:00 current -> releases/1
   ])
   assert.equal(listing.entries[3].path, '/srv/app/notes file.txt')
   assert.equal(listing.entries[1].hidden, true)
+})
+
+test('uses the remote home reported by SFTP when no directory was requested', () => {
+  const listing = parseSftpListing('Remote working directory: /home/deploy\n', '')
+  assert.equal(listing.directory, '/home/deploy')
+  assert.deepEqual(listing.entries, [])
 })
 
 test('turns common SFTP failures into actionable messages', () => {

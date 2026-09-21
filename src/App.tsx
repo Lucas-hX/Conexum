@@ -41,7 +41,6 @@ type ToolPanel = 'sftp' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 type MainView = 'home' | 'terminal'
 type SplitMode = 0 | 2 | 4
-type DirectoryHelpAction = 'sftp' | 'editor' | 'help'
 type ContextMenuState =
   | { x: number; y: number; kind: 'profile'; profileId: string }
   | { x: number; y: number; kind: 'group'; group: string }
@@ -475,7 +474,7 @@ export function App() {
   const [localGroupCollapsed, setLocalGroupCollapsed] = useState(false)
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
   const [sftpStart, setSftpStart] = useState<{ sessionId: string; directory: string | null } | null>(null)
-  const [directoryHelp, setDirectoryHelp] = useState<{ sessionId: string; action: DirectoryHelpAction } | null>(null)
+  const [directoryHelp, setDirectoryHelp] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState<ConnectionProfile | null>(null)
@@ -696,7 +695,7 @@ export function App() {
     setSessions(remaining)
     terminalRefs.current.delete(session.id)
     latestDirectories.current.delete(session.id)
-    if (directoryHelp?.sessionId === session.id) setDirectoryHelp(null)
+    if (directoryHelp === session.id) setDirectoryHelp(null)
 
     if (activeSessionId === session.id) {
       const next = remaining[Math.min(closingIndex, remaining.length - 1)] ?? null
@@ -838,25 +837,12 @@ export function App() {
   const requestSftp = () => {
     if (activeTool === 'sftp') { setActiveTool(null); return }
     if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local') return
-    const directory = directoryForSession(activeSession)
-    if (directory) openSftpAt(directory)
-    else setDirectoryHelp({ sessionId: activeSession.id, action: 'sftp' })
+    openSftpAt(directoryForSession(activeSession))
   }
 
   const requestEditor = () => {
     if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local') return
-    const directory = directoryForSession(activeSession)
-    if (directory) void openEditorWindow(undefined, directory)
-    else setDirectoryHelp({ sessionId: activeSession.id, action: 'editor' })
-  }
-
-  const resolveDirectoryHelp = (useHome: boolean) => {
-    if (!directoryHelp || activeSession?.id !== directoryHelp.sessionId || activeSession.status !== 'connected') { setDirectoryHelp(null); return }
-    const directory = useHome ? null : directoryForSession(activeSession)
-    if (!useHome && !directory) return
-    if (directoryHelp.action === 'sftp') openSftpAt(directory)
-    if (directoryHelp.action === 'editor') void openEditorWindow(undefined, directory)
-    setDirectoryHelp(null)
+    void openEditorWindow(undefined, directoryForSession(activeSession))
   }
 
   const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -1004,7 +990,7 @@ export function App() {
             </div>
             {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
             {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
-              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={sftpStart?.sessionId === activeSession.id ? sftpStart.directory : directoryForSession(activeSession)} onClose={() => setActiveTool(null)} onOpenEditor={(remotePath) => void openEditorWindow(remotePath)} />
+              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={sftpStart?.sessionId === activeSession.id ? sftpStart.directory : directoryForSession(activeSession)} onClose={() => setActiveTool(null)} onOpenEditor={(remotePath, directory) => void openEditorWindow(remotePath, directory)} />
             )}
           </div>
 
@@ -1016,7 +1002,7 @@ export function App() {
               <span>{mainView === 'terminal' && activeSession ? activeSession.profile.kind === 'local' ? activeSession.profile.group : `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? selected.kind === 'local' ? selected.group : `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span>
               {mainView === 'terminal' && activeSession?.status === 'connected' && (
                 !activeDirectory && activeSession.profile.kind !== 'local'
-                  ? <button className="session-directory unavailable directory-help-trigger" title="Configurar detección de la carpeta remota" onClick={() => setDirectoryHelp({ sessionId: activeSession.id, action: 'help' })}>Ruta —</button>
+                  ? <button className="session-directory unavailable directory-help-trigger" title="Activar seguimiento de la carpeta remota (opcional)" onClick={() => setDirectoryHelp(activeSession.id)}>Ruta —</button>
                   : <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? 'Directorio local no disponible'}>{activeDirectory ?? 'Ruta —'}</span>
               )}
             </div>
@@ -1054,12 +1040,7 @@ export function App() {
         onSave={saveProfile}
       />}
       {diagnostics && <DiagnosticsModal diagnostics={diagnostics} onClose={() => setDiagnostics(null)} />}
-      {directoryHelp && <ShellIntegrationHelp
-        currentDirectory={activeSession?.id === directoryHelp.sessionId ? directoryForSession(activeSession) : null}
-        onClose={() => setDirectoryHelp(null)}
-        onOpenHome={directoryHelp.action === 'help' ? undefined : () => resolveDirectoryHelp(true)}
-        onOpenCurrent={directoryHelp.action === 'help' ? undefined : () => resolveDirectoryHelp(false)}
-      />}
+      {directoryHelp && <ShellIntegrationHelp onClose={() => setDirectoryHelp(null)} />}
     </main>
   )
 }

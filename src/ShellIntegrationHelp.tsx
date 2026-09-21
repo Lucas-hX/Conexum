@@ -30,11 +30,8 @@ const startupFiles: Record<RemoteShell, string> = {
   fish: '~/.config/fish/config.fish',
 }
 
-export function ShellIntegrationHelp({ currentDirectory, onClose, onOpenHome, onOpenCurrent }: {
-  currentDirectory: string | null
+export function ShellIntegrationHelp({ onClose }: {
   onClose(): void
-  onOpenHome?: () => void
-  onOpenCurrent?: () => void
 }) {
   const [shell, setShell] = useState<RemoteShell>('bash')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'selected'>('idle')
@@ -56,8 +53,8 @@ export function ShellIntegrationHelp({ currentDirectory, onClose, onOpenHome, on
       <section className="shell-help-modal" role="dialog" aria-modal="true" aria-labelledby="shell-help-title">
         <div className="modal-heading"><div><small>DIRECTORIO REMOTO</small><h2 id="shell-help-title">Sincronizar la carpeta actual</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></div>
         <div className="shell-help-content">
-          <p>La terminal aún no informó su ruta. Una conexión SSH aparte sólo puede ver su propio directorio, no el de esta pestaña. Por eso SFTP y Editor no pueden adivinarla al abrirse.</p>
-          <p>Pegá este bloque en el shell remoto para activarlo ahora. Para conservarlo en futuras sesiones, agregalo también a <code>{startupFiles[shell]}</code> en el servidor.</p>
+          <p>SFTP y Editor se abren en el home remoto cuando la terminal no informa una ruta. También podés escribir una ruta manualmente en ambos exploradores.</p>
+          <p>Si querés que al abrirlos sigan la carpeta de esta pestaña, pegá este bloque en el shell remoto. Para conservarlo en futuras sesiones, agregalo a <code>{startupFiles[shell]}</code>.</p>
           <div className="shell-help-tabs" role="group" aria-label="Shell remoto">
             {(['bash', 'zsh', 'fish'] as const).map((name) => <button key={name} className={shell === name ? 'active' : ''} aria-pressed={shell === name} onClick={() => { setShell(name); setCopyState('idle') }}>{name}</button>)}
           </div>
@@ -65,7 +62,7 @@ export function ShellIntegrationHelp({ currentDirectory, onClose, onOpenHome, on
           <div className="shell-help-copy"><button className="secondary-button" onClick={() => void copySnippet()}><ClipboardCopy size={14} />{copyState === 'copied' ? 'Copiado' : 'Copiar bloque'}</button>{copyState === 'selected' && <span>Texto seleccionado: presioná ⌘C.</span>}</div>
           <small>Cuando aparezca la ruta abajo, abrí SFTP o Editor de nuevo. Conexum nunca ejecuta este bloque por vos.</small>
         </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Cerrar</button>{onOpenHome && <button className="secondary-button" onClick={onOpenHome}>Abrir en home</button>}{currentDirectory && onOpenCurrent && <button className="primary-button" onClick={onOpenCurrent} title={currentDirectory}>Abrir en carpeta actual</button>}</div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Cerrar</button></div>
       </section>
     </div>
   )
