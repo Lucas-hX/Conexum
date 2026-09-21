@@ -32,7 +32,7 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Actualizador local seguro para builds alpha.
 - Explorador SFTP opcional con navegación y cola de transferencias.
 - Respaldo/importación segura de perfiles y diagnóstico sanitizado de sesiones.
-- Ventana independiente de edición remota con Monaco y árbol SFTP.
+- Editor remoto integrado con Monaco y árbol SFTP, redimensionable junto a la terminal.
 - Terminal local predeterminada agrupada bajo el nombre de la Mac, con sesiones independientes.
 - Inicio y controles visuales compactos para reducir el ruido fuera de la terminal.
 - SFTP y Editor abiertos en la última ruta informada por la pestaña cuando OSC 7 está disponible; si no, comienzan directamente en el home remoto y permiten cambiar de ruta manualmente.

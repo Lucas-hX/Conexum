@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
-import { ArrowRight, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, X } from 'lucide-react'
 import type { RemoteTextFile, SftpEntry } from './conexum'
 
 loader.config({ monaco })
@@ -10,9 +10,17 @@ const BRAND_ICON = './brand/conexum-icon.png'
 
 type EditorContext = {
   sessionId: string
+}
+
+export type EditorRequest = { requestId: number; initialDirectory: string | null; remotePath?: string }
+type EditorPaneProps = EditorContext & {
   profileName: string
-  initialDirectory: string | null
-  initialPath?: string | null
+  request: EditorRequest
+  visible: boolean
+  connected: boolean
+  onHide(): void
+  onClose(sessionId: string, state: { dirty: boolean; saving: boolean }): void
+  onStateChange(sessionId: string, state: { dirty: boolean; saving: boolean }): void
 }
 
 type DocumentTab = RemoteTextFile & {
@@ -97,9 +105,10 @@ function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onO
   )
 }
 
-export function EditorApp() {
-  const [context, setContext] = useState<EditorContext | null>(null)
+export function EditorPane({ sessionId, profileName, request, visible, connected, onHide, onClose, onStateChange }: EditorPaneProps) {
+  const context = useMemo(() => ({ sessionId }), [sessionId])
   const [documents, setDocuments] = useState<DocumentTab[]>([])
+  const documentsRef = useRef<DocumentTab[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
   const [loadingPath, setLoadingPath] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -111,10 +120,11 @@ export function EditorApp() {
   const activeDocument = documents.find((document) => document.path === activePath) ?? null
   const dirty = documents.some((document) => document.draft !== document.content)
   const saving = documents.some((document) => document.saving)
+  documentsRef.current = documents
 
   const openFile = useCallback(async (remotePath: string) => {
-    if (!context || !window.conexum) return
-    const existing = documents.find((document) => document.path === remotePath)
+    if (!window.conexum) return
+    const existing = documentsRef.current.find((document) => document.path === remotePath)
     if (existing) {
       setActivePath(remotePath)
       return
@@ -130,7 +140,7 @@ export function EditorApp() {
     } finally {
       setLoadingPath(null)
     }
-  }, [context, documents])
+  }, [sessionId])
 
   const navigateDirectory = useCallback(async (nextContext: EditorContext, directory: string | null, fallbackToHome = false) => {
     const requestId = ++navigationId.current
@@ -155,42 +165,18 @@ export function EditorApp() {
   }, [])
 
   useEffect(() => {
-    let removeOpenListener: (() => void) | undefined
-    let mounted = true
-    void window.conexum?.editor.getContext().then((nextContext) => {
-      if (!mounted) return
-      setContext(nextContext)
-      document.title = `Conexum Editor — ${nextContext.profileName}`
-      void navigateDirectory(nextContext, nextContext.initialDirectory, true)
-      if (nextContext.initialPath) void openFileAfterContext(nextContext, nextContext.initialPath)
-      removeOpenListener = window.conexum?.editor.onOpenFile(({ remotePath, initialDirectory }) => {
-        void navigateDirectory(nextContext, initialDirectory, true)
-        if (remotePath) void openFileAfterContext(nextContext, remotePath)
-      })
-    }).catch((contextError) => setError(errorMessage(contextError)))
-    const openFileAfterContext = async (nextContext: EditorContext, remotePath: string) => {
-      if (!window.conexum) return
-      setLoadingPath(remotePath)
-      setError(null)
-      try {
-        const file = await window.conexum.editor.readText(nextContext.sessionId, remotePath)
-        setDocuments((current) => current.some((document) => document.path === file.path) ? current : [...current, { ...file, draft: file.content, saving: false }])
-        setActivePath(file.path)
-      } catch (openError) {
-        setError(errorMessage(openError))
-      } finally {
-        setLoadingPath(null)
-      }
-    }
-    return () => { mounted = false; navigationId.current++; removeOpenListener?.() }
-  }, [navigateDirectory])
+    void navigateDirectory(context, request.initialDirectory, true)
+    if (request.remotePath) void openFile(request.remotePath)
+    return () => { navigationId.current++ }
+  }, [context, navigateDirectory, openFile, request.requestId])
 
   useEffect(() => {
-    window.conexum?.editor.setState({ dirty, saving })
-  }, [dirty, saving])
+    onStateChange(sessionId, { dirty, saving })
+  }, [dirty, onStateChange, saving, sessionId])
 
   const saveDocument = useCallback(async (documentToSave: DocumentTab) => {
-    if (!context || !window.conexum || documentToSave.saving || documentToSave.draft === documentToSave.content) return
+    if (!window.conexum || documentToSave.saving || documentToSave.draft === documentToSave.content) return
+    if (!connected) { setError('Reconectá la sesión SSH antes de guardar. Los cambios permanecen en el editor.'); return }
     const savedDraft = documentToSave.draft
     setDocuments((current) => current.map((document) => document.path === documentToSave.path ? { ...document, saving: true } : document))
     setError(null)
@@ -221,18 +207,18 @@ export function EditorApp() {
       setDocuments((current) => current.map((document) => document.path === documentToSave.path ? { ...document, saving: false } : document))
       setError(errorMessage(saveError))
     }
-  }, [context])
+  }, [connected, context])
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && activeDocument) {
+      if (visible && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && activeDocument) {
         event.preventDefault()
         void saveDocument(activeDocument)
       }
     }
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
-  }, [activeDocument, saveDocument])
+  }, [activeDocument, saveDocument, visible])
 
   const closeDocument = (document: DocumentTab) => {
     if (document.saving) return
@@ -245,24 +231,30 @@ export function EditorApp() {
     }
   }
 
-  const closeEditorWindow = async () => {
-    try {
-      await window.conexum?.editor.closeWindow({ dirty, saving })
-    } catch (closeError) {
-      setError(errorMessage(closeError))
+  const closeEditor = useCallback(() => onClose(sessionId, { dirty, saving }), [dirty, onClose, saving, sessionId])
+
+  useEffect(() => {
+    const closeWithShortcut = (event: KeyboardEvent) => {
+      if (!visible || !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'w') return
+      event.preventDefault()
+      event.stopPropagation()
+      closeEditor()
     }
-  }
+    window.addEventListener('keydown', closeWithShortcut, true)
+    return () => window.removeEventListener('keydown', closeWithShortcut, true)
+  }, [closeEditor, visible])
 
   const statusLanguage = activeDocument ? languageForPath(activeDocument.path) : 'Texto'
   const emptyMessage = useMemo(() => loadingPath ? `Abriendo ${baseName(loadingPath)}…` : 'Seleccioná un archivo del servidor para comenzar.', [loadingPath])
 
   return (
-    <main className="editor-shell">
+    <main className="editor-shell editor-embedded">
       <header className="editor-titlebar">
-        <div className="editor-window-brand"><img src={BRAND_ICON} alt="" /><strong>Conexum Editor</strong>{context && <span>— {context.profileName}</span>}</div>
+        <button className="editor-return-button" type="button" onClick={onHide} title="Ocultar editor y ampliar terminal; conserva los archivos abiertos"><ArrowLeft size={14} /><span>Terminal completa</span></button>
+        <div className="editor-window-brand"><img src={BRAND_ICON} alt="" /><strong>Editor</strong><span>— {profileName}</span></div>
         <div className="editor-window-actions">
-          <button className="editor-save-button" disabled={!activeDocument || activeDocument.draft === activeDocument.content || activeDocument.saving} onClick={() => activeDocument && void saveDocument(activeDocument)} aria-label="Guardar archivo" title="Guardar archivo (⌘S)"><Save size={15} /></button>
-          <button className="editor-close-button" onClick={() => void closeEditorWindow()} aria-label="Cerrar editor" title="Cerrar editor"><X size={14} /><span>Cerrar</span></button>
+          <button className="editor-save-button" disabled={!connected || !activeDocument || activeDocument.draft === activeDocument.content || activeDocument.saving} onClick={() => activeDocument && void saveDocument(activeDocument)} aria-label="Guardar archivo" title={connected ? 'Guardar archivo (⌘S)' : 'Reconectá la sesión para guardar'}><Save size={15} /></button>
+          <button className="editor-close-button" onClick={closeEditor} aria-label="Cerrar editor" title="Cerrar editor (⌘W)"><X size={14} /></button>
         </div>
       </header>
       <section className="editor-workspace">
@@ -270,11 +262,11 @@ export function EditorApp() {
           <form className="editor-explorer-heading" onSubmit={(event) => { event.preventDefault(); if (context) void navigateDirectory(context, pathDraft.trim() || null) }}>
             <span className="editor-path-label">EXPLORADOR</span>
             <input value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setPathDraft(rootDirectory ?? '') }} placeholder={rootDirectory ? undefined : 'Cargando carpeta…'} aria-label="Ruta remota del editor" title="Escribí una ruta absoluta y presioná Enter" spellCheck={false} />
-            <button className="editor-path-go" type="submit" disabled={!context} aria-label="Ir a la ruta escrita" title="Ir a la ruta"><ArrowRight size={13} /></button>
-            <button className="editor-path-home" type="button" disabled={!context} onClick={() => context && void navigateDirectory(context, null)} aria-label="Ir al home remoto" title="Home remoto"><Home size={13} /></button>
+            <button className="editor-path-go" type="submit" aria-label="Ir a la ruta escrita" title="Ir a la ruta"><ArrowRight size={13} /></button>
+            <button className="editor-path-home" type="button" onClick={() => void navigateDirectory(context, null)} aria-label="Ir al home remoto" title="Home remoto"><Home size={13} /></button>
             <button className="editor-path-refresh" type="button" disabled={!rootDirectory} onClick={() => setTreeKey((current) => current + 1)} aria-label="Actualizar árbol" title="Actualizar árbol"><RefreshCw size={13} /></button>
           </form>
-          {context && rootDirectory && <div className="editor-tree"><RemoteDirectory key={`${rootDirectory}:${treeKey}`} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPath={treeSelectedPath} onSelect={setTreeSelectedPath} /></div>}
+          {rootDirectory && <div className="editor-tree"><RemoteDirectory key={`${rootDirectory}:${treeKey}`} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPath={treeSelectedPath} onSelect={setTreeSelectedPath} /></div>}
         </aside>
         <section className="editor-main">
           <div className="editor-tabs">
@@ -340,11 +332,11 @@ export function EditorApp() {
         </section>
       </section>
       <footer className="editor-statusbar">
-        <span><i />{context?.profileName ?? 'Conectando…'}</span>
+        <span><i className={connected ? '' : 'offline'} />{profileName}{connected ? '' : ' · Sin conexión'}</span>
         <div><span>UTF-8</span><span>{statusLanguage === 'plaintext' ? 'Texto' : statusLanguage}</span><span>{activeDocument?.saving ? 'Guardando…' : dirty ? 'Cambios sin guardar' : 'Guardado'}</span></div>
       </footer>
     </main>
   )
 }
 
-export default EditorApp
+export default EditorPane

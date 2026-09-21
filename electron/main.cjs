@@ -44,8 +44,8 @@ const sessions = new SessionRegistry()
 const sessionConnections = new Map()
 const localSessions = new Map()
 const sessionDiagnostics = new Map()
-const editorWindows = new Map()
-const editorContexts = new Map()
+const editorState = { dirty: false, saving: false }
+let mainWindowWebContentsId = null
 const telemetryCache = new Map()
 const transferJobs = new Map()
 const transferSnapshots = new Map()
@@ -816,6 +816,8 @@ function installApplicationMenu() {
 }
 
 function createWindow() {
+  editorState.dirty = false
+  editorState.saving = false
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -833,136 +835,47 @@ function createWindow() {
       sandbox: true,
     },
   })
+  mainWindowWebContentsId = window.webContents.id
 
-  window.on('closed', closeAllSessions)
-  window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
-}
-
-function createEditorWindow(parent, context, initialPath) {
   let allowClose = false
   let closeDialogOpen = false
-  const editorWindow = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    minWidth: 860,
-    minHeight: 560,
-    parent: parent ?? undefined,
-    title: `Conexum Editor — ${context.profileName}`,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#0b1016',
-    icon: appIconPath,
-    show: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  })
-
-  const state = { ...context, initialPath: initialPath ?? null, dirty: false, saving: false }
-  const webContentsId = editorWindow.webContents.id
-  editorWindows.set(context.sessionId, editorWindow)
-  editorContexts.set(webContentsId, state)
-
-  editorWindow.once('ready-to-show', () => editorWindow.show())
-  editorWindow.on('close', (event) => {
-    if (allowClose) return
-    if (state.saving) {
-      event.preventDefault()
-      if (!closeDialogOpen) {
-        closeDialogOpen = true
-        void dialog.showMessageBox(editorWindow, {
-          type: 'info',
-          buttons: ['Entendido'],
-          title: 'Guardado en curso',
-          message: 'Esperá a que termine el guardado remoto antes de cerrar el editor.',
-        }).finally(() => { closeDialogOpen = false })
-      }
-      return
-    }
-    if (!state.dirty) return
+  window.on('close', (event) => {
+    if (allowClose || (!editorState.dirty && !editorState.saving)) return
     event.preventDefault()
     if (closeDialogOpen) return
     closeDialogOpen = true
-    void dialog.showMessageBox(editorWindow, {
-      type: 'warning',
-      buttons: ['Cerrar sin guardar', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Cambios sin guardar',
-      message: 'Hay archivos remotos con cambios sin guardar.',
-      detail: 'Si cerrás el editor ahora, esos cambios locales se perderán.',
+    if (editorState.saving) {
+      void dialog.showMessageBox(window, {
+        type: 'info', buttons: ['Entendido'], title: 'Guardado en curso',
+        message: 'Esperá a que termine el guardado remoto antes de cerrar Conexum.',
+      }).finally(() => { closeDialogOpen = false })
+      return
+    }
+    void dialog.showMessageBox(window, {
+      type: 'warning', buttons: ['Cerrar sin guardar', 'Cancelar'], defaultId: 1, cancelId: 1,
+      title: 'Cambios sin guardar', message: 'Hay archivos remotos con cambios sin guardar.',
+      detail: 'Si cerrás Conexum ahora, esos cambios locales se perderán.',
     }).then((result) => {
-      if (result.response === 0) {
-        allowClose = true
-        editorWindow.close()
-      }
+      if (result.response === 0) { allowClose = true; window.close() }
     }).finally(() => { closeDialogOpen = false })
   })
-  editorWindow.on('closed', () => {
-    editorWindows.delete(context.sessionId)
-    editorContexts.delete(webContentsId)
+  window.on('closed', () => {
+    mainWindowWebContentsId = null
+    closeAllSessions()
   })
-  editorWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { query: { view: 'editor' } })
-  return editorWindow
+  window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
 }
 
-function registerEditorWindowHandlers() {
-  ipcMain.handle('editor:open-window', (event, request = {}) => {
-    const context = sessionContext(request.sessionId)
-    const profileName = typeof request.profileName === 'string' && request.profileName.length <= 200 && !/[\r\n\0]/.test(request.profileName)
-      ? request.profileName
-      : `${context.connection.username}@${context.connection.host}`
-    const remotePath = request.remotePath ? validateRemotePath(request.remotePath) : null
-    const initialDirectory = request.initialDirectory
-      ? validateRemotePath(request.initialDirectory)
-      : remotePath ? path.posix.dirname(remotePath) : null
-    const existing = editorWindows.get(request.sessionId)
-    if (existing && !existing.isDestroyed()) {
-      existing.show()
-      existing.focus()
-      sendToRenderer(existing.webContents, 'editor:open-file', { remotePath, initialDirectory })
-      return true
-    }
-    createEditorWindow(BrowserWindow.fromWebContents(event.sender), {
-      sessionId: request.sessionId,
-      profileName,
-      initialDirectory,
-    }, remotePath)
-    return true
-  })
-
-  ipcMain.handle('editor:get-context', (event) => {
-    const context = editorContexts.get(event.sender.id)
-    if (!context) throw new Error('Esta ventana no tiene un contexto de edición activo.')
-    return { sessionId: context.sessionId, profileName: context.profileName, initialDirectory: context.initialDirectory, initialPath: context.initialPath }
-  })
-
-  ipcMain.on('editor:set-state', (event, { dirty, saving } = {}) => {
-    const context = editorContexts.get(event.sender.id)
-    if (context) {
-      context.dirty = dirty === true
-      context.saving = saving === true
-    }
-  })
-
-  ipcMain.handle('editor:close-window', (event, { dirty, saving } = {}) => {
-    const context = editorContexts.get(event.sender.id)
-    const editorWindow = BrowserWindow.fromWebContents(event.sender)
-    if (!context || !editorWindow || editorWindow.isDestroyed()) throw new Error('La ventana del editor ya no está disponible.')
-    context.dirty = dirty === true
-    context.saving = saving === true
-    editorWindow.close()
-  })
-}
+ipcMain.on('editor:set-state', (event, { dirty, saving } = {}) => {
+  if (event.sender.id !== mainWindowWebContentsId) return
+  editorState.dirty = dirty === true
+  editorState.saving = saving === true
+})
 
 registerSshHandlers()
 registerLocalHandlers()
 registerProfileHandlers()
 registerSftpHandlers()
-registerEditorWindowHandlers()
 
 app.whenReady().then(() => {
   app.setAppUserModelId('com.lucashx.conexum')

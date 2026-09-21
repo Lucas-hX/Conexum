@@ -1,9 +1,10 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, lazy, Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SftpPanel } from './SftpPanel'
 import { ShellIntegrationHelp } from './ShellIntegrationHelp'
+import type { EditorRequest } from './EditorApp'
 import {
   ChevronDown,
   ClipboardCopy,
@@ -37,7 +38,7 @@ import {
 } from 'lucide-react'
 import type { ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
 
-type ToolPanel = 'sftp' | null
+type ToolPanel = 'sftp' | 'editor' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 type MainView = 'home' | 'terminal'
 type SplitMode = 0 | 2 | 4
@@ -75,6 +76,9 @@ const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
   port: 0,
   username: '',
 }
+const EditorPane = lazy(() => import('./EditorApp'))
+type EditorPanel = { sessionId: string; profileName: string; request: EditorRequest }
+type EditorState = { dirty: boolean; saving: boolean }
 
 function parseOsc7Directory(value: string) {
   if (!value || value.length > 4_096 || /[\r\n\0]/.test(value)) return null
@@ -470,9 +474,13 @@ export function App() {
     return Number.isFinite(stored) ? Math.min(Math.max(stored, 180), 420) : 270
   })
   const [utilityPanelWidth, setUtilityPanelWidth] = useState(480)
+  const [editorWidth, setEditorWidth] = useState(58)
+  const [editorHeight, setEditorHeight] = useState(63)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(loadProfiles().map((profile) => profile.group)))
   const [localGroupCollapsed, setLocalGroupCollapsed] = useState(false)
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
+  const [editorPanels, setEditorPanels] = useState<EditorPanel[]>([])
+  const [editorStates, setEditorStates] = useState<Record<string, EditorState>>({})
   const [sftpStart, setSftpStart] = useState<{ sessionId: string; directory: string | null } | null>(null)
   const [directoryHelp, setDirectoryHelp] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -591,8 +599,35 @@ export function App() {
   }, [activeSessionId, activeSession?.status, mainView])
 
   useEffect(() => {
-    if (activeTool && (activeSession?.status !== 'connected' || activeSession.profile.kind === 'local')) setActiveTool(null)
-  }, [activeSession?.profile.kind, activeSession?.status, activeTool])
+    if (activeTool && (!activeSession || activeSession.profile.kind === 'local'
+      || (activeTool === 'sftp' && activeSession.status !== 'connected')
+      || (activeTool === 'editor' && !editorPanels.some((panel) => panel.sessionId === activeSessionId)))) setActiveTool(null)
+  }, [activeSession?.profile.kind, activeSession?.status, activeSessionId, activeTool, editorPanels])
+
+  useEffect(() => {
+    window.conexum?.editor.setState({
+      dirty: editorPanels.some((panel) => editorStates[panel.sessionId]?.dirty),
+      saving: editorPanels.some((panel) => editorStates[panel.sessionId]?.saving),
+    })
+  }, [editorPanels, editorStates])
+
+  const updateEditorState = useCallback((sessionId: string, state: EditorState) => {
+    setEditorStates((current) => current[sessionId]?.dirty === state.dirty && current[sessionId]?.saving === state.saving
+      ? current
+      : { ...current, [sessionId]: state })
+  }, [])
+
+  const closeEditor = useCallback((sessionId: string, state: EditorState) => {
+    if (state.saving) { window.alert('Esperá a que termine el guardado remoto antes de cerrar el editor.'); return }
+    if (state.dirty && !window.confirm('Hay cambios sin guardar en el editor. ¿Cerrarlo y descartarlos?')) return
+    setEditorPanels((current) => current.filter((panel) => panel.sessionId !== sessionId))
+    setEditorStates((current) => {
+      const next = { ...current }
+      delete next[sessionId]
+      return next
+    })
+    setActiveTool(null)
+  }, [])
 
   useEffect(() => {
     if (splitMode && sessions.length < 2) setSplitMode(0)
@@ -669,6 +704,7 @@ export function App() {
     setActiveSessionId(sessionId)
     setSelectedId(profile.id)
     setMainView('terminal')
+    setActiveTool(null)
     setRecentIds((current) => [profile.id, ...current.filter((id) => id !== profile.id)].slice(0, 8))
   }
 
@@ -683,10 +719,12 @@ export function App() {
   }
 
   const closeSessionTab = (session: SshSessionTab) => {
+    const editorState = editorStates[session.id]
+    if (editorState?.saving) { window.alert('Esperá a que termine el guardado remoto antes de cerrar esta sesión.'); return }
     const active = session.status === 'connected' || session.status === 'connecting'
-    const message = active
+    const message = (active
       ? `¿Cerrar la pestaña de ${session.profile.name} y finalizar esta sesión activa?`
-      : `¿Cerrar la pestaña de ${session.profile.name}?`
+      : `¿Cerrar la pestaña de ${session.profile.name}?`) + (editorState?.dirty ? ' Se perderán los cambios sin guardar del editor.' : '')
     if (!window.confirm(message)) return
     if (active) terminalRefs.current.get(session.id)?.disconnect()
 
@@ -695,6 +733,13 @@ export function App() {
     setSessions(remaining)
     terminalRefs.current.delete(session.id)
     latestDirectories.current.delete(session.id)
+    setEditorPanels((current) => current.filter((panel) => panel.sessionId !== session.id))
+    setEditorStates((current) => {
+      const next = { ...current }
+      delete next[session.id]
+      return next
+    })
+    if (activeSessionId === session.id && activeTool === 'editor') setActiveTool(null)
     if (directoryHelp === session.id) setDirectoryHelp(null)
 
     if (activeSessionId === session.id) {
@@ -817,14 +862,18 @@ export function App() {
 
   const directoryForSession = (session: SshSessionTab) => latestDirectories.current.get(session.id) ?? session.currentDirectory
 
-  const openEditorWindow = async (remotePath?: string, directoryOverride?: string | null) => {
+  const openEditor = (remotePath?: string, directoryOverride?: string | null) => {
     if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local' || !window.conexum) return
-    await window.conexum.editor.openWindow({
-      sessionId: activeSession.id,
-      profileName: activeSession.profile.name,
-      initialDirectory: remotePath ? remotePath.slice(0, remotePath.lastIndexOf('/')) || '/' : directoryOverride === undefined ? directoryForSession(activeSession) : directoryOverride,
-      ...(remotePath ? { remotePath } : {}),
+    const sessionId = activeSession.id
+    const initialDirectory = remotePath ? remotePath.slice(0, remotePath.lastIndexOf('/')) || '/' : directoryOverride === undefined ? directoryForSession(activeSession) : directoryOverride
+    setEditorPanels((current) => {
+      const existing = current.find((panel) => panel.sessionId === sessionId)
+      const requestId = (existing?.request.requestId ?? 0) + 1
+      const next = { sessionId, profileName: activeSession.profile.name, request: { requestId, initialDirectory, ...(remotePath ? { remotePath } : {}) } }
+      return existing ? current.map((panel) => panel.sessionId === sessionId ? next : panel) : [...current, next]
     })
+    setMainView('terminal')
+    setActiveTool('editor')
   }
 
   const openSftpAt = (directory: string | null) => {
@@ -841,8 +890,35 @@ export function App() {
   }
 
   const requestEditor = () => {
-    if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local') return
-    void openEditorWindow(undefined, directoryForSession(activeSession))
+    if (!activeSession || activeSession.profile.kind === 'local') return
+    if (activeTool === 'editor') { setActiveTool(null); return }
+    if (activeSession.status !== 'connected') {
+      if (editorPanels.some((panel) => panel.sessionId === activeSession.id)) setActiveTool('editor')
+      return
+    }
+    openEditor(undefined, directoryForSession(activeSession))
+  }
+
+  const startEditorResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    const row = event.currentTarget.parentElement
+    if (!row) return
+    const vertical = window.matchMedia('(max-width: 1050px)').matches
+    const startPosition = vertical ? event.clientY : event.clientX
+    const startExtent = vertical ? editorHeight : editorWidth
+    const rowExtent = vertical ? row.getBoundingClientRect().height : row.getBoundingClientRect().width
+    const move = (moveEvent: PointerEvent) => {
+      const position = vertical ? moveEvent.clientY : moveEvent.clientX
+      const next = Math.min(Math.max(startExtent + (position - startPosition) / rowExtent * 100, 35), 75)
+      if (vertical) setEditorHeight(next)
+      else setEditorWidth(next)
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
   }
 
   const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -892,7 +968,7 @@ export function App() {
           <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <span className="toolbar-separator" aria-hidden="true" />
           <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? 'SFTP sólo para sesiones SSH' : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />
-          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? 'Editor remoto sólo para sesiones SSH' : 'Editor'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestEditor} />
+          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? 'Editor remoto sólo para sesiones SSH' : 'Editor'} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />
           <div className="settings-wrapper">
             <button className="icon-button" aria-label="Ajustes" title="Ajustes" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
@@ -953,6 +1029,7 @@ export function App() {
                 const ordinal = sameProfileSessions.findIndex((item) => item.id === session.id) + 1
                 return (
                   <button key={session.id} className={`session-tab ${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}`} onClick={() => {
+                    if (activeTool === 'editor' && activeSessionId !== session.id) setActiveTool(editorPanels.some((panel) => panel.sessionId === session.id) ? 'editor' : null)
                     if (activeTool === 'sftp' && activeSessionId !== session.id) {
                       const directory = latestDirectories.current.get(session.id) ?? session.currentDirectory
                       if (directory && session.profile.kind !== 'local') setSftpStart({ sessionId: session.id, directory })
@@ -970,7 +1047,7 @@ export function App() {
             <div className="tab-spacer" />
           </div>
 
-          <div className={`content-row ${activeTool && mainView === 'terminal' ? 'panel-open' : ''}`} style={{ '--utility-width': `${utilityPanelWidth}px` } as CSSProperties}>
+          <div className={`content-row ${activeTool === 'sftp' && mainView === 'terminal' ? 'panel-open' : ''} ${activeTool === 'editor' && mainView === 'terminal' ? 'editor-open' : ''}`} style={{ '--utility-width': `${utilityPanelWidth}px`, '--editor-width': `${editorWidth}%`, '--editor-height': `${editorHeight}%` } as CSSProperties}>
             <div className={`primary-view ${mainView === 'terminal' && splitMode ? `split-view split-${splitMode}` : ''}`}>
               <div className={`home-layer ${mainView === 'home' ? 'visible' : ''}`}>
                 <WelcomeHome profiles={[localProfile, ...profiles]} recentIds={recentIds} selectedId={selectedId} onSelect={(profile) => setSelectedId(profile.id)} onConnect={openSession} />
@@ -988,10 +1065,16 @@ export function App() {
                 </div>
               })}
             </div>
-            {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
+            {mainView === 'terminal' && activeTool === 'sftp' && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
             {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
-              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={sftpStart?.sessionId === activeSession.id ? sftpStart.directory : directoryForSession(activeSession)} onClose={() => setActiveTool(null)} onOpenEditor={(remotePath, directory) => void openEditorWindow(remotePath, directory)} />
+              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={sftpStart?.sessionId === activeSession.id ? sftpStart.directory : directoryForSession(activeSession)} onClose={() => setActiveTool(null)} onOpenEditor={openEditor} />
             )}
+            {editorPanels.length > 0 && <div className={`editor-dock ${mainView === 'terminal' && activeTool === 'editor' ? 'visible' : ''}`}>
+              {editorPanels.map((panel) => <div key={panel.sessionId} className={`editor-dock-layer ${mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId ? 'visible' : ''}`}>
+                <Suspense fallback={<div className="editor-loading">Abriendo editor…</div>}><EditorPane sessionId={panel.sessionId} profileName={panel.profileName} request={panel.request} visible={mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId} connected={sessions.find((session) => session.id === panel.sessionId)?.status === 'connected'} onHide={() => setActiveTool(null)} onClose={closeEditor} onStateChange={updateEditorState} /></Suspense>
+              </div>)}
+            </div>}
+            {mainView === 'terminal' && activeTool === 'editor' && <button className="editor-resizer" aria-label="Cambiar tamaño del editor" onPointerDown={startEditorResize} onDoubleClick={() => { setEditorWidth(58); setEditorHeight(63) }} />}
           </div>
 
           <footer className="statusbar">

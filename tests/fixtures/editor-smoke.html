@@ -1,19 +1,34 @@
 <!doctype html>
-<!-- Manual visual fixture: run pnpm dev, then open /tests/fixtures/editor-smoke.html?view=editor. No SSH connection is used. -->
+<!-- Manual integrated-editor fixture: run pnpm dev, then open /tests/fixtures/editor-smoke.html. No SSH connection is used. -->
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Editor smoke test</title>
   </head>
   <body>
     <div id="root"></div>
     <script>
+      localStorage.setItem('conexum.connectionProfiles.v2', JSON.stringify([{
+        id: 'fixture-server', kind: 'ssh', name: 'Servidor de prueba', group: 'Demo',
+        host: 'example.invalid', port: 22, username: 'demo',
+      }]))
       window.conexum = {
         platform: 'desktop',
+        local: { getMachineInfo: async () => ({ name: 'Mac de prueba', username: 'demo', homeDirectory: '/Users/demo' }) },
+        ssh: {
+          connect: async ({ sessionId }) => ({ sessionId, pid: 1 }),
+          write: () => {}, resize: () => {}, disconnect: () => {},
+          getTelemetry: async () => null,
+          onData: () => () => {}, onExit: () => () => {},
+        },
         sftp: {
-          list: async () => ({
-            directory: '/home/demo',
+          transfers: async () => [],
+          onTransferProgress: () => () => {},
+          onFileSaved: () => () => {},
+          list: async (_sessionId, directory) => ({
+            directory: directory || '/home/demo',
             entries: [
               { name: 'sample.md', path: '/home/demo/sample.md', type: 'file', size: 43, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
               { name: 'sample.py', path: '/home/demo/sample.py', type: 'file', size: 24, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
@@ -22,14 +37,12 @@
           }),
         },
         editor: {
-          getContext: async () => ({ sessionId: 'smoke-test', profileName: 'Local fixture', initialDirectory: '/home/demo', initialPath: '/home/demo/sample.md' }),
           readText: async (_sessionId, remotePath) => {
             if (remotePath.endsWith('.error')) throw new Error('Error de prueba al leer el archivo.')
             return { path: remotePath, name: remotePath.split('/').at(-1), content: remotePath.endsWith('.py') ? 'print("Visible Python")\n' : '# Visible markdown\n\nThis file has content.\n', size: 43, modified: 'Jan 01 2026', permissions: '-rw-r--r--', fingerprint: '0'.repeat(64) }
           },
-          onOpenFile: () => () => {},
+          writeText: async (request) => ({ conflict: false, file: { path: request.remotePath, name: request.remotePath.split('/').at(-1), size: request.content.length, modified: 'Jan 01 2026', permissions: '-rw-r--r--', fingerprint: '1'.repeat(64) } }),
           setState: () => {},
-          closeWindow: async () => {},
         },
       }
     </script>

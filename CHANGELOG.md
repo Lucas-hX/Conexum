@@ -2,6 +2,14 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.6.6 — 2026-09-20
+
+### Mejorado
+
+- El editor ahora se abre dentro de Conexum, a la izquierda de la terminal activa, con un divisor redimensionable. SFTP también abre los archivos en esta vista integrada.
+- Cada pestaña SSH conserva sus documentos y borradores al cambiar de sesión, visitar Inicio, alternar con SFTP o ampliar la terminal. La X y ⌘W cierran el editor de esa sesión sin desconectarla.
+- Se pide confirmación antes de descartar cambios al cerrar el editor, la pestaña SSH o Conexum; se bloquea el cierre durante un guardado remoto.
+
 ## 0.6.5 — 2026-09-20
 
 ### Corregido

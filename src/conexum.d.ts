@@ -115,16 +115,12 @@ declare global {
         onFileSaved(callback: (event: { sessionId: string; remotePath: string }) => void): () => void
       }
       editor: {
-        openWindow(request: { sessionId: string; profileName: string; initialDirectory: string | null; remotePath?: string }): Promise<boolean>
-        getContext(): Promise<{ sessionId: string; profileName: string; initialDirectory: string | null; initialPath: string | null }>
         readText(sessionId: string, remotePath: string): Promise<RemoteTextFile>
         writeText(request: { sessionId: string; remotePath: string; content: string; baselineFingerprint: string }): Promise<
           | { conflict: true; current: { fingerprint: string; size: number; modified: string } }
           | { conflict: false; file: Omit<RemoteTextFile, 'content'> }
         >
         setState(state: { dirty: boolean; saving: boolean }): void
-        closeWindow(state: { dirty: boolean; saving: boolean }): Promise<void>
-        onOpenFile(callback: (event: { remotePath: string | null; initialDirectory: string | null }) => void): () => void
       }
     }
   }

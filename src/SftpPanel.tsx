@@ -313,7 +313,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
         <button onClick={() => void createFolder()}><FolderPlus size={14} /></button>
         <button onClick={() => void renameSelected()} disabled={!selected}><Pencil size={13} /></button>
         <button className="danger" onClick={() => void removeSelected()} disabled={!selected}><Trash2 size={13} /></button>
-        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined, selected?.type === 'directory' ? selected.path : directory)} disabled={loading || !directory} title="Abrir ventana del editor en esta carpeta"><Code2 size={14} />Editor</button>
+        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined, selected?.type === 'directory' ? selected.path : directory)} disabled={loading || !directory} title="Abrir el editor integrado en esta carpeta"><Code2 size={14} />Editor</button>
         <span />
         <button onClick={() => setShowHidden((current) => !current)} title={showHidden ? 'Ocultar archivos ocultos' : 'Mostrar archivos ocultos'}>{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div>
