@@ -2,6 +2,17 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.6.3 — 2026-09-20
+
+### Corregido
+
+- SFTP y Editor ya no abren silenciosamente el home remoto cuando la terminal aún no informa su directorio. Muestran cómo activar OSC 7 y ofrecen abrir el home sólo por elección explícita.
+- La ruta más reciente de cada pestaña se toma al pulsar SFTP o Editor, incluso si React todavía no actualizó la barra inferior.
+
+### Mejorado
+
+- Los acentos visuales de controles, selección, estado, editor y avisos usan únicamente tonos de azul.
+
 ## 0.6.2 — 2026-09-20
 
 ### Agregado

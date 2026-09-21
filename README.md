@@ -132,7 +132,7 @@ CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pesta
 
 ## Explorador SFTP
 
-Con una sesión SSH activa, presioná el icono de carpeta **SFTP** para abrir el panel lateral. El explorador comienza en el directorio de esa pestaña informado por OSC 7 o, si todavía no existe esa información, en el home remoto.
+Con una sesión SSH activa, presioná el icono de carpeta **SFTP** para abrir el panel lateral. El explorador comienza en el directorio de esa pestaña informado por OSC 7. Si no hay ruta disponible, Conexum explica cómo activar la integración y te deja elegir si preferís abrir el home remoto.
 
 Desde el panel se puede:
 
@@ -162,7 +162,7 @@ Con una pestaña seleccionada, **Diagnóstico** muestra únicamente datos saniti
 
 ## Conexum Editor
 
-Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El árbol se abre en el directorio actual informado por OSC 7; si aún no está disponible, se abre en el home remoto. Al abrir un archivo desde SFTP, muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
+Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El árbol se abre en el directorio actual informado por OSC 7; si no hay ruta, Conexum te lo indica antes de abrir el home remoto. Al abrir un archivo desde SFTP, muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
 
 La primera versión incluye:
 

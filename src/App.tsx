@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SftpPanel } from './SftpPanel'
+import { ShellIntegrationHelp } from './ShellIntegrationHelp'
 import {
   ChevronDown,
   ClipboardCopy,
@@ -40,6 +41,7 @@ type ToolPanel = 'sftp' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 type MainView = 'home' | 'terminal'
 type SplitMode = 0 | 2 | 4
+type DirectoryHelpAction = 'sftp' | 'editor' | 'help'
 type ContextMenuState =
   | { x: number; y: number; kind: 'profile'; profileId: string }
   | { x: number; y: number; kind: 'group'; group: string }
@@ -145,7 +147,7 @@ const TerminalView = forwardRef<TerminalHandle, {
       theme: {
         background: '#080d12',
         foreground: '#d6dde7',
-        cursor: '#55e276',
+        cursor: '#73c8ff',
         selectionBackground: '#1c72c955',
         black: '#111820', red: '#ff6b72', green: '#55e276', yellow: '#f3c969',
         blue: '#53a9ff', magenta: '#c68cff', cyan: '#52d6de', white: '#d6dde7',
@@ -472,6 +474,8 @@ export function App() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(loadProfiles().map((profile) => profile.group)))
   const [localGroupCollapsed, setLocalGroupCollapsed] = useState(false)
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
+  const [sftpStart, setSftpStart] = useState<{ sessionId: string; directory: string | null } | null>(null)
+  const [directoryHelp, setDirectoryHelp] = useState<{ sessionId: string; action: DirectoryHelpAction } | null>(null)
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState<ConnectionProfile | null>(null)
@@ -484,6 +488,7 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [splitMode, setSplitMode] = useState<SplitMode>(0)
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map())
+  const latestDirectories = useRef<Map<string, string>>(new Map())
 
   const selected = selectedId === LOCAL_PROFILE_ID ? localProfile : profiles.find((profile) => profile.id === selectedId) ?? null
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
@@ -621,6 +626,7 @@ export function App() {
   }, [])
 
   const updateSessionStatus = useCallback((sessionId: string, status: SessionStatus) => {
+    if (status === 'connecting') latestDirectories.current.delete(sessionId)
     setSessions((current) => current.map((session) => session.id === sessionId
       ? {
           ...session,
@@ -632,6 +638,7 @@ export function App() {
   }, [])
 
   const updateSessionDirectory = useCallback((sessionId: string, currentDirectory: string) => {
+    latestDirectories.current.set(sessionId, currentDirectory)
     setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, currentDirectory } : session))
   }, [])
 
@@ -688,6 +695,8 @@ export function App() {
     const remaining = sessions.filter((item) => item.id !== session.id)
     setSessions(remaining)
     terminalRefs.current.delete(session.id)
+    latestDirectories.current.delete(session.id)
+    if (directoryHelp?.sessionId === session.id) setDirectoryHelp(null)
 
     if (activeSessionId === session.id) {
       const next = remaining[Math.min(closingIndex, remaining.length - 1)] ?? null
@@ -807,14 +816,47 @@ export function App() {
     setSettingsOpen(false)
   }
 
-  const openEditorWindow = async (remotePath?: string) => {
+  const directoryForSession = (session: SshSessionTab) => latestDirectories.current.get(session.id) ?? session.currentDirectory
+
+  const openEditorWindow = async (remotePath?: string, directoryOverride?: string | null) => {
     if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local' || !window.conexum) return
     await window.conexum.editor.openWindow({
       sessionId: activeSession.id,
       profileName: activeSession.profile.name,
-      initialDirectory: remotePath ? remotePath.slice(0, remotePath.lastIndexOf('/')) || '/' : activeSession.currentDirectory,
+      initialDirectory: remotePath ? remotePath.slice(0, remotePath.lastIndexOf('/')) || '/' : directoryOverride === undefined ? directoryForSession(activeSession) : directoryOverride,
       ...(remotePath ? { remotePath } : {}),
     })
+  }
+
+  const openSftpAt = (directory: string | null) => {
+    if (!activeSession) return
+    setSftpStart({ sessionId: activeSession.id, directory })
+    setMainView('terminal')
+    setActiveTool('sftp')
+  }
+
+  const requestSftp = () => {
+    if (activeTool === 'sftp') { setActiveTool(null); return }
+    if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local') return
+    const directory = directoryForSession(activeSession)
+    if (directory) openSftpAt(directory)
+    else setDirectoryHelp({ sessionId: activeSession.id, action: 'sftp' })
+  }
+
+  const requestEditor = () => {
+    if (!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local') return
+    const directory = directoryForSession(activeSession)
+    if (directory) void openEditorWindow(undefined, directory)
+    else setDirectoryHelp({ sessionId: activeSession.id, action: 'editor' })
+  }
+
+  const resolveDirectoryHelp = (useHome: boolean) => {
+    if (!directoryHelp || activeSession?.id !== directoryHelp.sessionId || activeSession.status !== 'connected') { setDirectoryHelp(null); return }
+    const directory = useHome ? null : directoryForSession(activeSession)
+    if (!useHome && !directory) return
+    if (directoryHelp.action === 'sftp') openSftpAt(directory)
+    if (directoryHelp.action === 'editor') void openEditorWindow(undefined, directory)
+    setDirectoryHelp(null)
   }
 
   const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -843,10 +885,6 @@ export function App() {
     window.addEventListener('pointerup', stop)
   }
 
-  const toggleTool = (tool: Exclude<ToolPanel, null>) => {
-    setActiveTool((current) => current === tool ? null : tool)
-  }
-
   const activeDirectory = activeSession?.currentDirectory
     ? compactDirectory(activeSession.currentDirectory, activeSession.profile.username)
     : null
@@ -867,8 +905,8 @@ export function App() {
           />
           <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <span className="toolbar-separator" aria-hidden="true" />
-          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? 'SFTP sólo para sesiones SSH' : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={() => { setMainView('terminal'); toggleTool('sftp') }} />
-          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? 'Editor remoto sólo para sesiones SSH' : 'Editor'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={() => void openEditorWindow()} />
+          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? 'SFTP sólo para sesiones SSH' : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />
+          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? 'Editor remoto sólo para sesiones SSH' : 'Editor'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestEditor} />
           <div className="settings-wrapper">
             <button className="icon-button" aria-label="Ajustes" title="Ajustes" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
@@ -928,7 +966,16 @@ export function App() {
                 const sameProfileSessions = sessions.filter((item) => item.profile.id === session.profile.id)
                 const ordinal = sameProfileSessions.findIndex((item) => item.id === session.id) + 1
                 return (
-                  <button key={session.id} className={`session-tab ${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}`} onClick={() => { setActiveSessionId(session.id); setSelectedId(session.profile.id); setMainView('terminal') }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.kind === 'local' ? 'Terminal de esta Mac' : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · Doble clic para cerrar`}>
+                  <button key={session.id} className={`session-tab ${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}`} onClick={() => {
+                    if (activeTool === 'sftp' && activeSessionId !== session.id) {
+                      const directory = latestDirectories.current.get(session.id) ?? session.currentDirectory
+                      if (directory && session.profile.kind !== 'local') setSftpStart({ sessionId: session.id, directory })
+                      else setActiveTool(null)
+                    }
+                    setActiveSessionId(session.id)
+                    setSelectedId(session.profile.id)
+                    setMainView('terminal')
+                  }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.kind === 'local' ? 'Terminal de esta Mac' : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · Doble clic para cerrar`}>
                     {session.profile.kind === 'local' ? <Monitor size={15} /> : <SquareTerminal size={15} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
                 )
@@ -957,7 +1004,7 @@ export function App() {
             </div>
             {mainView === 'terminal' && activeTool && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
             {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
-              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={activeSession.currentDirectory} onClose={() => setActiveTool(null)} onOpenEditor={(remotePath) => void openEditorWindow(remotePath)} />
+              <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={sftpStart?.sessionId === activeSession.id ? sftpStart.directory : directoryForSession(activeSession)} onClose={() => setActiveTool(null)} onOpenEditor={(remotePath) => void openEditorWindow(remotePath)} />
             )}
           </div>
 
@@ -968,9 +1015,9 @@ export function App() {
               <span className="divider" />
               <span>{mainView === 'terminal' && activeSession ? activeSession.profile.kind === 'local' ? activeSession.profile.group : `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? selected.kind === 'local' ? selected.group : `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span>
               {mainView === 'terminal' && activeSession?.status === 'connected' && (
-                <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? (activeSession.profile.kind === 'local' ? 'Directorio local no disponible' : 'Configurá OSC 7 para detectar la carpeta remota')}>
-                  {activeDirectory ?? 'Ruta —'}
-                </span>
+                !activeDirectory && activeSession.profile.kind !== 'local'
+                  ? <button className="session-directory unavailable directory-help-trigger" title="Configurar detección de la carpeta remota" onClick={() => setDirectoryHelp({ sessionId: activeSession.id, action: 'help' })}>Ruta —</button>
+                  : <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? 'Directorio local no disponible'}>{activeDirectory ?? 'Ruta —'}</span>
               )}
             </div>
             <div className={`status-right ${telemetryStale ? 'stale' : ''}`}>
@@ -1007,6 +1054,12 @@ export function App() {
         onSave={saveProfile}
       />}
       {diagnostics && <DiagnosticsModal diagnostics={diagnostics} onClose={() => setDiagnostics(null)} />}
+      {directoryHelp && <ShellIntegrationHelp
+        currentDirectory={activeSession?.id === directoryHelp.sessionId ? directoryForSession(activeSession) : null}
+        onClose={() => setDirectoryHelp(null)}
+        onOpenHome={directoryHelp.action === 'help' ? undefined : () => resolveDirectoryHelp(true)}
+        onOpenCurrent={directoryHelp.action === 'help' ? undefined : () => resolveDirectoryHelp(false)}
+      />}
     </main>
   )
 }
