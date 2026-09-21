@@ -509,6 +509,38 @@ button {
   grid-template-columns: minmax(480px, 1fr) 5px var(--utility-width, 380px);
 }
 
+.content-row.editor-open {
+  grid-template-columns: minmax(0, var(--editor-width, 58%)) 5px minmax(0, 1fr);
+}
+
+.content-row.editor-open > .primary-view { grid-column: 3; grid-row: 1; }
+
+.editor-dock {
+  display: none;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #0b1015;
+}
+
+.content-row.editor-open > .editor-dock { display: block; grid-column: 1; grid-row: 1; }
+
+.editor-dock-layer { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+.editor-dock-layer.visible { visibility: visible; pointer-events: auto; }
+.editor-loading { display: grid; place-items: center; height: 100%; color: #81909b; font-size: 12px; }
+
+.editor-resizer {
+  grid-column: 2;
+  grid-row: 1;
+  width: 5px;
+  padding: 0;
+  border: 0;
+  background: #27333e;
+  cursor: col-resize;
+}
+.editor-resizer:hover, .editor-resizer:focus-visible { background: #398fca; }
+
 .primary-view {
   position: relative;
   min-width: 0;
@@ -1595,7 +1627,7 @@ button {
   font-size: 9px;
 }
 
-/* Standalone remote editor */
+/* Embedded remote editor */
 .editor-shell {
   width: 100%;
   height: 100%;
@@ -1608,11 +1640,11 @@ button {
 .editor-titlebar {
   display: flex;
   align-items: center;
-  padding: 0 14px 0 82px;
+  gap: 13px;
+  padding: 0 12px;
   border-bottom: 1px solid #29323a;
   background: linear-gradient(180deg, #171d23, #141a20);
   user-select: none;
-  -webkit-app-region: drag;
 }
 
 .editor-window-brand {
@@ -1627,7 +1659,33 @@ button {
 .editor-window-brand strong { color: #edf2f6; font-size: 14px; }
 .editor-window-brand span { overflow: hidden; color: #7f8d98; text-overflow: ellipsis; white-space: nowrap; }
 
+.editor-return-button {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #31536b;
+  border-radius: 6px;
+  color: #a9d4f3;
+  background: #152736;
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.editor-return-button:hover { color: #e5f4ff; border-color: #4b7896; background: #1b3448; }
+.editor-return-button:focus-visible { outline: 2px solid #55aef0; outline-offset: 2px; }
+
 .editor-window-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; -webkit-app-region: no-drag; }
+
+.editor-embedded .editor-window-brand { min-width: 0; }
+.editor-embedded .editor-window-brand img { width: 20px; height: 20px; }
+.editor-embedded .editor-window-brand strong { font-size: 12px; }
+.editor-embedded .editor-window-brand span { max-width: 120px; }
+.editor-embedded .editor-close-button { width: 29px; justify-content: center; padding: 0; }
+.editor-embedded .editor-workspace { grid-template-columns: minmax(150px, 28%) minmax(0, 1fr); }
+.editor-embedded .editor-explorer-heading { padding-inline: 5px; }
 
 .editor-save-button,
 .editor-close-button,
@@ -1773,6 +1831,7 @@ button {
 }
 .editor-statusbar > span, .editor-statusbar > div { display: flex; align-items: center; gap: 13px; }
 .editor-statusbar i { width: 7px; height: 7px; border-radius: 50%; background: #55b4f5; }
+.editor-statusbar i.offline { background: #667581; }
 
 .modal-backdrop {
   position: fixed;
@@ -2017,6 +2076,13 @@ button {
 @media (max-width: 1050px) {
   .workspace { grid-template-columns: min(var(--sidebar-width, 230px), 230px) 5px minmax(0, 1fr); }
   .content-row.panel-open { grid-template-columns: minmax(420px, 1fr) 5px min(320px, var(--utility-width, 320px)); }
+  .content-row.editor-open { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, var(--editor-height, 63%)) 5px minmax(0, 1fr); }
+  .content-row.editor-open > .editor-dock { grid-column: 1; grid-row: 1; }
+  .content-row.editor-open > .editor-resizer { grid-column: 1; grid-row: 2; width: 100%; height: 5px; cursor: row-resize; }
+  .content-row.editor-open > .primary-view { grid-column: 1; grid-row: 3; }
+  .editor-embedded .editor-workspace { grid-template-columns: minmax(165px, 25%) minmax(0, 1fr); }
+  .editor-embedded .editor-window-brand img,
+  .editor-embedded .editor-window-brand span { display: none; }
 }
 
 @media (max-width: 800px) {

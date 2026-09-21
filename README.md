@@ -42,7 +42,7 @@ El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agent
 - Explorador SFTP acoplable con navegación, transferencias y operaciones seguras.
 - Respaldo e importación de perfiles en un formato versionado que nunca incluye contraseñas ni claves privadas.
 - Diagnóstico de conexión copiable sin capturar contenido de la terminal.
-- Ventana independiente Conexum Editor con árbol SFTP, Monaco, pestañas y guardado remoto seguro.
+- Editor integrado y redimensionable junto a la terminal, con árbol SFTP, Monaco, pestañas y guardado remoto seguro.
 
 Todavía están pendientes la firma y notarización para distribución pública, funciones avanzadas del editor y otras mejoras descritas en el [roadmap](ROADMAP.md).
 
@@ -162,7 +162,7 @@ Con una pestaña seleccionada, **Diagnóstico** muestra únicamente datos saniti
 
 ## Conexum Editor
 
-Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El árbol comienza en la última ruta informada por la pestaña mediante OSC 7 o, si no está disponible, en el home remoto. Podés escribir otra ruta absoluta en el explorador del Editor y presionar Enter o el botón de flecha; el botón de home regresa al directorio inicial del usuario remoto. Al abrir Editor desde SFTP se conserva la carpeta explorada, y al abrir un archivo se muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
+Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP. El editor aparece dentro de Conexum, a la izquierda de la terminal, y podés arrastrar el divisor para ajustar el espacio. El árbol comienza en la última ruta informada por la pestaña mediante OSC 7 o, si no está disponible, en el home remoto. Podés escribir otra ruta absoluta en el explorador del Editor y presionar Enter o el botón de flecha; el botón de home regresa al directorio inicial del usuario remoto. Al abrir Editor desde SFTP se conserva la carpeta explorada, y al abrir un archivo se muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
 
 La primera versión incluye:
 
@@ -173,8 +173,8 @@ La primera versión incluye:
 - comprobación de la huella del archivo antes de sobrescribirlo;
 - confirmación si el archivo cambió en el servidor;
 - reemplazo mediante un archivo temporal remoto y conservación de permisos;
-- confirmación al cerrar documentos o la ventana con cambios pendientes;
-- botón visible para cerrar la ventana y protección mientras un archivo se está guardando;
+- confirmación al cerrar documentos, el editor, la pestaña SSH o Conexum con cambios pendientes;
+- botón «Terminal completa» para ocultar el editor sin perder borradores; X y `⌘W` para cerrarlo con confirmación si hay cambios, sin interrumpir la sesión SSH; cambiar de pestaña o pasar a Inicio también conserva los borradores;
 - rechazo de archivos binarios, no UTF-8 o mayores a 2 MB.
 
 El editor depende de una sesión SSH activa. Si la sesión termina, el contenido abierto permanece visible, pero es necesario reconectarla para volver a navegar o guardar.

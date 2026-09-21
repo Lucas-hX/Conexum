@@ -14,10 +14,10 @@ test('accepts only the built-in local profile and clamps terminal size', () => {
 })
 
 test('provides a safe machine label and reads only the cwd from lsof output', () => {
-  assert.deepEqual(machineInfo('MacBook-Pro.local', 'lexus', '/Users/lexus'), {
-    name: 'MacBook-Pro', username: 'lexus', homeDirectory: '/Users/lexus',
+  assert.deepEqual(machineInfo('MacBook-Pro.local', 'example', '/Users/example'), {
+    name: 'MacBook-Pro', username: 'example', homeDirectory: '/Users/example',
   })
-  assert.equal(machineInfo('bad\nname', '', '/Users/lexus').name, 'Esta Mac')
-  assert.equal(parseLsofCwd('p12345\nfcwd\nn/Users/lexus/My Project\n'), '/Users/lexus/My Project')
+  assert.equal(machineInfo('bad\nname', '', '/Users/example').name, 'Esta Mac')
+  assert.equal(parseLsofCwd('p12345\nfcwd\nn/Users/example/My Project\n'), '/Users/example/My Project')
   assert.equal(parseLsofCwd('p12345\nnrelative/path\n'), null)
 })
