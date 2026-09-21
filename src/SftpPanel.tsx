@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import {
   ArrowDownToLine,
+  ArrowRight,
   ArrowUpFromLine,
   ArrowUpDown,
   ChevronDown,
@@ -12,6 +13,7 @@ import {
   File,
   Folder,
   FolderPlus,
+  Home,
   LoaderCircle,
   Link,
   Pencil,
@@ -26,7 +28,7 @@ type Props = {
   profileName: string
   initialDirectory: string | null
   onClose(): void
-  onOpenEditor(remotePath?: string): void
+  onOpenEditor(remotePath: string | undefined, directory: string): void
 }
 
 function joinRemote(directory: string, name: string) {
@@ -82,6 +84,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
   const [transfers, setTransfers] = useState<SftpTransferProgress[]>([])
   const [transfersExpanded, setTransfersExpanded] = useState(false)
   const directoryRef = useRef(directory)
+  const loadRequestId = useRef(0)
   const selected = entries.find((entry) => entry.path === selectedPath) ?? null
 
   const visibleEntries = useMemo(() => {
@@ -107,27 +110,36 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
     directoryRef.current = directory
   }, [directory])
 
-  const loadDirectory = useCallback(async (remotePath?: string) => {
+  const loadDirectory = useCallback(async (remotePath?: string, fallbackToHome = false) => {
     const api = window.conexum?.sftp
     if (!api) return
+    const requestId = ++loadRequestId.current
     setLoading(true)
     setError(null)
     try {
-      const result = await api.list(sessionId, remotePath)
+      let result
+      try {
+        result = await api.list(sessionId, remotePath)
+      } catch (initialError) {
+        if (!fallbackToHome || !remotePath) throw initialError
+        result = await api.list(sessionId)
+      }
+      if (requestId !== loadRequestId.current) return
       setDirectory(result.directory)
       setPathDraft(result.directory)
       setEditingPath(false)
       setEntries(result.entries)
       setSelectedPath(null)
     } catch (loadError) {
-      setError(errorMessage(loadError))
+      if (requestId === loadRequestId.current) setError(errorMessage(loadError))
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestId.current) setLoading(false)
     }
   }, [sessionId])
 
   useEffect(() => {
-    void loadDirectory(initialDirectory ?? undefined)
+    void loadDirectory(initialDirectory ?? undefined, true)
+    return () => { loadRequestId.current++ }
   }, [sessionId])
 
   useEffect(() => {
@@ -279,15 +291,19 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
         <button className="icon-button" onClick={onClose} aria-label="Cerrar explorador SFTP"><X size={17} /></button>
       </div>
 
-      <form className={`sftp-pathbar ${editingPath ? 'editing' : ''}`} onSubmit={(event) => { event.preventDefault(); void loadDirectory(pathDraft) }}>
+      <form className={`sftp-pathbar ${editingPath ? 'editing' : ''}`} onSubmit={(event) => { event.preventDefault(); void loadDirectory(pathDraft.trim() || undefined) }}>
+        <button type="button" onClick={() => void loadDirectory()} disabled={loading} aria-label="Ir al home remoto" title="Home remoto"><Home size={14} /></button>
         <button type="button" onClick={() => void loadDirectory(parentRemote(directory || '/'))} disabled={loading || directory === '/'} aria-label="Subir una carpeta"><ChevronUp size={15} /></button>
         {editingPath ? (
-          <input autoFocus value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onBlur={() => setEditingPath(false)} aria-label="Ruta remota" spellCheck={false} />
+          <input autoFocus value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setPathDraft(directory); setEditingPath(false) } }} aria-label="Ruta remota" placeholder="/ruta/absoluta" spellCheck={false} />
         ) : (
           <div className="sftp-breadcrumbs" onDoubleClick={() => setEditingPath(true)} title="Doble clic para escribir una ruta">
             {breadcrumbs.map((crumb, index) => <button key={crumb.path} type="button" onClick={() => void loadDirectory(crumb.path)}>{crumb.name}{index < breadcrumbs.length - 1 && <span>›</span>}</button>)}
           </div>
         )}
+        {editingPath
+          ? <button type="submit" disabled={loading} aria-label="Ir a la ruta escrita" title="Ir a la ruta"><ArrowRight size={14} /></button>
+          : <button type="button" onClick={() => { setPathDraft(directory); setEditingPath(true) }} aria-label="Escribir ruta remota" title="Escribir ruta remota"><Pencil size={13} /></button>}
         <button type="button" onClick={() => void loadDirectory(directory || undefined)} disabled={loading} aria-label="Actualizar"><RefreshCw size={14} /></button>
       </form>
 
@@ -297,7 +313,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
         <button onClick={() => void createFolder()}><FolderPlus size={14} /></button>
         <button onClick={() => void renameSelected()} disabled={!selected}><Pencil size={13} /></button>
         <button className="danger" onClick={() => void removeSelected()} disabled={!selected}><Trash2 size={13} /></button>
-        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined)} disabled={Boolean(selected && selected.type !== 'file')} title="Abrir ventana del editor"><Code2 size={14} />Editor</button>
+        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined, selected?.type === 'directory' ? selected.path : directory)} disabled={loading || !directory} title="Abrir ventana del editor en esta carpeta"><Code2 size={14} />Editor</button>
         <span />
         <button onClick={() => setShowHidden((current) => !current)} title={showHidden ? 'Ocultar archivos ocultos' : 'Mostrar archivos ocultos'}>{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div>
@@ -322,7 +338,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
             key={entry.path}
             className={`sftp-entry-row ${selectedPath === entry.path ? 'selected' : ''}`}
             onClick={() => setSelectedPath(entry.path)}
-            onDoubleClick={() => { if (entry.type === 'directory') void loadDirectory(entry.path); else if (entry.type === 'file') onOpenEditor(entry.path) }}
+            onDoubleClick={() => { if (entry.type === 'directory') void loadDirectory(entry.path); else if (entry.type === 'file') onOpenEditor(entry.path, directory) }}
             role="listitem"
             title={`${entry.permissions} · ${entry.owner} · ${entry.modified}`}
           >

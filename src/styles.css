@@ -903,7 +903,7 @@ button {
 
 .sftp-pathbar {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  grid-template-columns: 30px 30px minmax(0, 1fr) 30px 30px;
   gap: 5px;
   padding: 9px 10px 7px;
 }
@@ -1661,25 +1661,32 @@ button {
 .editor-explorer {
   min-width: 0;
   display: grid;
-  grid-template-rows: 38px minmax(0, 1fr);
+  grid-template-rows: 60px minmax(0, 1fr);
   border-right: 1px solid #28313a;
   background: #141a20;
 }
 
 .editor-explorer-heading {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px 0 13px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 27px 27px 27px;
+  grid-template-rows: 20px 28px;
+  align-content: center;
+  gap: 3px;
+  padding: 4px 9px;
   border-bottom: 1px solid #262f37;
   color: #8996a0;
   font-family: "SFMono-Regular", Menlo, monospace;
   font-size: 9px;
 }
 
-.editor-explorer-heading > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-path-label { grid-column: 1 / 3; align-self: center; letter-spacing: .06em; }
+.editor-explorer-heading input { grid-column: 1 / 4; grid-row: 2; min-width: 0; width: 100%; padding: 0 7px; border: 1px solid #303c47; border-radius: 5px; outline: none; color: #bdc9d3; background: #1a222a; font: inherit; font-size: 10px; }
+.editor-explorer-heading input:focus { border-color: #377cac; }
 .editor-explorer-heading button { width: 27px; height: 27px; border-radius: 6px; }
+.editor-path-go { grid-column: 4; grid-row: 2; }
+.editor-path-home { grid-column: 3; grid-row: 1; }
+.editor-path-refresh { grid-column: 4; grid-row: 1; }
 .editor-explorer-heading button:hover { color: #dce5ec; background: #ffffff0a; }
 .editor-tree { min-height: 0; overflow: auto; padding: 7px 5px 12px; scrollbar-color: #38434d transparent; scrollbar-width: thin; }
 
