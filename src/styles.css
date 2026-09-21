@@ -1556,6 +1556,29 @@ button {
 .settings-menu > button span { display: grid; gap: 2px; }
 .settings-menu > button strong { font-size: 11px; font-weight: 600; }
 .settings-menu > button small { color: #6f7e89; font-size: 9px; }
+.settings-language {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  color: #aebac4;
+}
+.settings-language > svg { color: #70b9ed; }
+.settings-language > span { display: grid; gap: 2px; }
+.settings-language strong { font-size: 11px; font-weight: 600; }
+.settings-language small { color: #6f7e89; font-size: 9px; }
+.settings-language select {
+  max-width: 92px;
+  border: 1px solid #3b4650;
+  border-radius: 6px;
+  padding: 5px 7px;
+  color: #dbe5ec;
+  background: #11181f;
+  font: inherit;
+  font-size: 10px;
+}
 .settings-menu > i { display: block; height: 1px; margin: 4px 7px; background: #303a43; }
 .settings-menu > p { margin: 5px 7px 4px; color: #90c5e7; font-size: 9px; line-height: 1.4; }
 

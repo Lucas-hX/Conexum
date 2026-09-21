@@ -47,10 +47,10 @@ test('validates and normalizes a basic connection request', () => {
 })
 
 test('rejects unsafe session, host, username, and port values', () => {
-  assert.throws(() => validateConnection(connectionRequest({ sessionId: '../session' })), /sesión inválido/i)
-  assert.throws(() => validateConnection(connectionRequest({ profile: { host: '-oProxyCommand=bad', port: 22, username: 'deploy' } })), /servidor no es válido/i)
-  assert.throws(() => validateConnection(connectionRequest({ profile: { host: 'example.com', port: 22, username: 'root user' } })), /usuario SSH no es válido/i)
-  assert.throws(() => validateConnection(connectionRequest({ profile: { host: 'example.com', port: 70_000, username: 'deploy' } })), /puerto SSH/i)
+  assert.throws(() => validateConnection(connectionRequest({ sessionId: '../session' })), /invalid session/i)
+  assert.throws(() => validateConnection(connectionRequest({ profile: { host: '-oProxyCommand=bad', port: 22, username: 'deploy' } })), /host is not valid/i)
+  assert.throws(() => validateConnection(connectionRequest({ profile: { host: 'example.com', port: 22, username: 'root user' } })), /SSH username is not valid/i)
+  assert.throws(() => validateConnection(connectionRequest({ profile: { host: 'example.com', port: 70_000, username: 'deploy' } })), /SSH port/i)
 })
 
 test('builds OpenSSH arguments without invoking a shell', () => {
@@ -109,7 +109,7 @@ test('adds a shared control socket to interactive SSH without changing the desti
 test('rejects control socket paths that leave no room for the OpenSSH temporary suffix', () => {
   const shortPath = '/tmp/cx-a1b2c3/1234567890abcdef'
   assert.equal(validateControlPath(shortPath), shortPath)
-  assert.throws(() => validateControlPath(`/tmp/${'a'.repeat(80)}`), /demasiado larga/i)
+  assert.throws(() => validateControlPath(`/tmp/${'a'.repeat(80)}`), /too long/i)
   assert.throws(() => buildSshArgs({
     host: 'example.com',
     port: 22,
@@ -117,7 +117,7 @@ test('rejects control socket paths that leave no room for the OpenSSH temporary 
     identityFile: '',
     configFile: '',
     sshAlias: '',
-  }, { controlPath: `/tmp/${'a'.repeat(80)}` }), /demasiado larga/i)
+  }, { controlPath: `/tmp/${'a'.repeat(80)}` }), /too long/i)
 })
 
 test('builds read-only telemetry arguments over the existing control socket', () => {
@@ -135,7 +135,7 @@ test('builds read-only telemetry arguments over the existing control socket', ()
   assert.ok(args.includes('ClearAllForwardings=yes'))
   assert.equal(args.at(-2), 'deploy@example.com')
   assert.match(args.at(-1), /\/proc\/stat/)
-  assert.throws(() => buildTelemetrySshArgs({}, 'relative/socket'), /multiplexación inválida/i)
+  assert.throws(() => buildTelemetrySshArgs({}, 'relative/socket'), /multiplexing path is invalid/i)
 })
 
 test('parses remote telemetry and calculates deltas without exposing raw output', () => {
@@ -217,7 +217,7 @@ test('keeps sessions independent and closes only the selected process', () => {
   registry.add('session-one', first)
   registry.add('session-two', second)
   assert.equal(registry.size, 2)
-  assert.throws(() => registry.add('session-one', {}), /sesión ya existe/i)
+  assert.throws(() => registry.add('session-one', {}), /session already exists/i)
 
   assert.equal(registry.close('session-one'), true)
   assert.equal(first.kills, 1)

@@ -2,6 +2,13 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## Unreleased
+
+### Added
+
+- English is now the default interface language, with Spanish available from **Settings → Language** and the preference saved locally.
+- The README, shell-integration guide, native dialogs, validation messages, Editor, SFTP browser, and terminal status messages now use English by default.
+
 ## 0.6.6 — 2026-09-20
 
 ### Mejorado

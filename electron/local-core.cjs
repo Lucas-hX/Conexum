@@ -5,10 +5,10 @@ const LOCAL_PROFILE_ID = 'conexum-local'
 
 function validateLocalConnection(request) {
   if (!request || typeof request !== 'object' || !isValidSessionId(request.sessionId)) {
-    throw new Error('Identificador de sesión local inválido.')
+    throw new Error('Invalid local session identifier.')
   }
   if (request.profile?.kind !== 'local' || request.profile.id !== LOCAL_PROFILE_ID) {
-    throw new Error('Perfil local inválido.')
+    throw new Error('Invalid local profile.')
   }
   return {
     sessionId: request.sessionId,

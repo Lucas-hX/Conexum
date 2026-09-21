@@ -2,64 +2,65 @@
   <img src="public/brand/conexum-icon.png" width="104" alt="Conexum logo" />
   <h1>Conexum</h1>
   <p><strong>A simple SSH connection manager for macOS.</strong></p>
-  <p>Una interfaz visual, discreta y centrada en la terminal para organizar y utilizar conexiones SSH sin reemplazar las herramientas del sistema.</p>
+  <p>A quiet, terminal-first visual interface for organizing and using SSH connections without replacing the system tools you already trust.</p>
 </div>
 
 ![Conexum welcome banner](public/brand/conexum-welcome-banner.png)
 
 > [!IMPORTANT]
-> Conexum está en una etapa **alpha temprana**. Ya es posible generar una aplicación local para pruebas, pero todavía no está firmada ni notarizada para distribución pública.
+> Conexum is in **early alpha**. You can build a local app for testing, but it is not yet signed or notarized for public distribution.
 
-## Qué es Conexum
+## What is Conexum?
 
-Conexum es un gestor de conexiones SSH inspirado en la claridad de mRemoteNG y MobaXterm, diseñado específicamente para macOS. También permite abrir la terminal de esta Mac. La terminal es siempre el espacio principal; el explorador SFTP, el editor remoto y las herramientas de observabilidad aparecen únicamente cuando son necesarios.
+Conexum is an SSH connection manager inspired by the clarity of mRemoteNG and MobaXterm, designed specifically for macOS. It can also open a local terminal on your Mac. The terminal remains the primary workspace; the SFTP browser, remote editor, and observability tools appear only when you need them.
 
-El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agentes y validación de servidores se delegan en el OpenSSH incluido en macOS.
+The project does not reinvent security-sensitive protocols. Connections, keys, agents, and host verification are delegated to the OpenSSH installation included with macOS.
 
-## Estado actual
+## Current status
 
-- Conexiones SSH reales mediante `/usr/bin/ssh` y `node-pty`.
-- Terminal local integrada mediante el shell de macOS, disponible de forma predeterminada en un grupo con el nombre de esta Mac.
-- Varias sesiones independientes en pestañas, incluso hacia el mismo servidor.
-- Vista dividida de dos terminales o cuadrícula de hasta cuatro sesiones abiertas.
-- Pantalla de Inicio simplificada con acceso rápido a la terminal local y hasta tres conexiones SSH.
-- Barra de herramientas compacta con iconos y descripciones accesibles al pasar el cursor.
-- Perfiles organizados en carpetas contraídas de manera predeterminada.
-- Creación y edición visual de perfiles.
-- Importación de entradas desde un archivo SSH config.
-- Soporte para usuario, host, puerto, alias e `IdentityFile`.
-- Integración con `ssh-agent` y macOS Keychain para las passphrases.
-- Panel lateral plegable y redimensionable.
-- Cierre individual de sesiones con confirmación.
-- Grupos de conexiones renombrables y eliminables desde su menú contextual.
-- Identidad nativa de Conexum en la ventana, el Dock, los menús y el diálogo Acerca de.
-- Pruebas automatizadas para argumentos SSH, validación de IPC y limpieza de sesiones.
-- Empaquetado local reproducible como `Conexum.app`.
-- Validación y paquete de prueba automáticos en GitHub Actions.
-- Directorio remoto independiente por pestaña mediante OSC 7.
-- Métricas discretas de CPU y RAM para la pestaña activa cada 9 segundos.
-- Actualizador local seguro para builds alpha instalados en macOS.
-- Explorador SFTP acoplable con navegación, transferencias y operaciones seguras.
-- Respaldo e importación de perfiles en un formato versionado que nunca incluye contraseñas ni claves privadas.
-- Diagnóstico de conexión copiable sin capturar contenido de la terminal.
-- Editor integrado y redimensionable junto a la terminal, con árbol SFTP, Monaco, pestañas y guardado remoto seguro.
+- Real SSH connections through `/usr/bin/ssh` and `node-pty`.
+- An integrated local terminal using the macOS shell, available by default in a group named after your Mac.
+- Multiple independent tabbed sessions, including multiple sessions to the same server.
+- A two-terminal split view or a grid of up to four open sessions.
+- A simplified Home screen with quick access to the local terminal and up to three SSH connections.
+- A compact toolbar with icons and accessible descriptions.
+- Profiles organized into groups that start collapsed.
+- Visual profile creation and editing.
+- Import from an SSH config file.
+- Support for username, host, port, alias, and `IdentityFile`.
+- Integration with `ssh-agent` and macOS Keychain for passphrases.
+- A collapsible, resizable sidebar.
+- Individual session closing with confirmation.
+- Connection groups that can be renamed or deleted from their context menu.
+- Native Conexum identity in the window, Dock, menus, and About dialog.
+- Automated tests for SSH arguments, IPC validation, and session cleanup.
+- Reproducible local packaging as `Conexum.app`.
+- Automated validation and test packaging in GitHub Actions.
+- A separate remote directory per tab through OSC 7.
+- Discreet CPU and RAM metrics for the active tab every nine seconds.
+- A safe local updater for alpha builds installed on macOS.
+- A dockable SFTP browser with navigation, transfers, and safe file operations.
+- Versioned profile backup and import that never includes passwords or private keys.
+- Copyable connection diagnostics that never capture terminal content.
+- An integrated, resizable editor beside the terminal with an SFTP tree, Monaco, tabs, and safe remote saving.
+- English as the default interface language, with Spanish available from **Settings → Language**.
 
-Todavía están pendientes la firma y notarización para distribución pública, funciones avanzadas del editor y otras mejoras descritas en el [roadmap](ROADMAP.md).
+Code signing and notarization, advanced editor features, and other improvements in the [roadmap](ROADMAP.md) are still pending.
 
-## Requisitos
+## Requirements
 
-- macOS en Apple Silicon o Intel.
-- Node.js 22 o posterior.
+- macOS on Apple Silicon or Intel.
+- Node.js 22 or later.
 - pnpm.
-- OpenSSH, incluido de fábrica en macOS.
+- OpenSSH, included with macOS.
 
-La forma más sencilla de instalar Node.js y pnpm es mediante Homebrew:
+The easiest way to install Node.js and pnpm is with Homebrew:
 
 ```bash
 brew install node pnpm
 ```
 
-## Instalación para desarrollo
+## Development setup
 
 ```bash
 git clone https://github.com/Lucas-hX/Conexum.git
@@ -69,150 +70,148 @@ pnpm run rebuild:native
 pnpm run desktop
 ```
 
-`rebuild:native` recompila `node-pty` para la versión de Electron utilizada por el proyecto. Normalmente sólo hace falta ejecutarlo después de instalar o actualizar dependencias.
+`rebuild:native` recompiles `node-pty` for the Electron version used by the project. You normally need to run it only after installing or updating dependencies.
 
-## Comandos útiles
+## Useful commands
 
 ```bash
-# Compilar y validar TypeScript
+# Build and validate TypeScript
 pnpm run build
 
-# Ejecutar las pruebas automatizadas
+# Run automated tests
 pnpm run test
 
-# Ejecutar pruebas y build de producción
+# Run tests and the production build
 pnpm run check
 
-# Abrir la interfaz en un navegador, sin conexiones SSH reales
+# Open the UI in a browser without real SSH connections
 pnpm run dev
 
-# Compilar y ejecutar la aplicación Electron completa
+# Build and run the complete Electron app
 pnpm run desktop
 
-# Generar una aplicación local sin firma
+# Generate an unsigned local app
 pnpm run package:mac
 
-# Actualizar, validar, empaquetar e instalar la última versión de main
+# Update, validate, package, and install the latest main branch
 pnpm run update:local
 ```
 
-La conexión SSH real sólo está disponible dentro de Electron. La versión del navegador se utiliza para desarrollar y revisar la interfaz.
+Real SSH connections are available only in Electron. The browser version is intended for interface development and review.
 
-El paquete local se genera en `release/mac-arm64/Conexum.app` en Apple Silicon o en el directorio equivalente de Intel. Al no estar firmado, macOS puede pedir una confirmación adicional antes de abrirlo. Los pull requests y cambios en `main` también ejecutan estas comprobaciones en GitHub Actions y producen un ZIP de prueba descargable durante 14 días.
+The local package is generated at `release/mac-arm64/Conexum.app` on Apple Silicon or the corresponding Intel directory. Because the app is unsigned, macOS may request extra confirmation before opening it. Pull requests and changes to `main` run the same checks in GitHub Actions and produce a downloadable test ZIP for 14 days.
 
-## Actualizaciones durante la etapa alpha
+## Alpha updates
 
-El archivo `scripts/update-conexum.command` automatiza la actualización local desde el código fuente. Se puede abrir desde Finder o ejecutar con:
+The `scripts/update-conexum.command` file automates local updates from source. Open it from Finder or run:
 
 ```bash
 pnpm run update:local
 ```
 
-El actualizador:
+The updater:
 
-1. exige una rama `main` limpia;
-2. descarga únicamente el avance lineal más reciente de `origin/main`;
-3. instala las dependencias bloqueadas por `pnpm-lock.yaml`;
-4. ejecuta las pruebas, compila y genera `Conexum.app`;
-5. comprueba que Conexum esté cerrado;
-6. reemplaza `/Applications/Conexum.app` y restaura la copia anterior si la instalación falla;
-7. abre la versión nueva.
+1. requires a clean `main` branch;
+2. downloads only the latest fast-forward update from `origin/main`;
+3. installs dependencies locked by `pnpm-lock.yaml`;
+4. runs tests, builds, and packages `Conexum.app`;
+5. verifies that Conexum is closed;
+6. replaces `/Applications/Conexum.app` and restores the previous copy if installation fails;
+7. opens the new version.
 
-Los perfiles permanecen en Application Support y no forman parte del bundle reemplazado. Para utilizar otra ubicación se puede definir `CONEXUM_APP_PATH` con una ruta absoluta terminada en `Conexum.app`.
+Profiles remain in Application Support and are not part of the replaced app bundle. To use another location, set `CONEXUM_APP_PATH` to an absolute path ending in `Conexum.app`.
 
-Este mecanismo está pensado para mantenedores y colaboradores durante la etapa alpha. El actualizador público futuro requerirá firma, notarización y releases versionadas.
+This mechanism is intended for maintainers and contributors during the alpha stage. A future public updater will require signing, notarization, and versioned releases.
 
-## Terminal local, directorio y métricas remotas
+## Local terminal, directories, and remote metrics
 
-El grupo con el nombre de esta Mac permite abrir tantas terminales locales independientes como necesites, sin crear un perfil SSH ni conectarte a `localhost`. Cada pestaña ejecuta `/bin/zsh` en una pseudo-terminal. Su directorio se consulta localmente a baja frecuencia, sin enviar comandos al shell ni registrar lo que escribís. El perfil local no se incluye en los respaldos SSH. SFTP, el editor remoto y el diagnóstico SSH se habilitan sólo para sesiones remotas.
+The group named after your Mac can open any number of independent local terminals without creating an SSH profile or connecting to `localhost`. Each tab runs `/bin/zsh` in a pseudo-terminal. Conexum checks its directory locally at a low frequency without sending shell commands or recording what you type. The local profile is excluded from SSH backups. SFTP, the remote editor, and SSH diagnostics are available only for remote sessions.
 
-La barra inferior muestra el directorio actual de la pestaña cuando el shell remoto emite OSC 7. Consultá la [configuración opcional para Bash, Zsh y Fish](docs/shell-integration.md).
+The status bar shows the current directory when a remote shell emits OSC 7. See the [optional Bash, Zsh, and Fish setup](docs/shell-integration.md).
 
-CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pestaña visible. Conexum reutiliza el socket multiplexado de la sesión SSH, usa un comando remoto fijo de sólo lectura y comparte el resultado entre pestañas del mismo servidor. Nunca inserta comandos en la terminal interactiva. Linux y macOS remotos están soportados; la primera lectura de CPU aparece como `—` hasta disponer de una segunda muestra para calcular el intervalo.
+Conexum checks CPU and RAM about every nine seconds for the visible tab only. It reuses the session's multiplexed SSH socket, runs a fixed read-only command, and shares the result between tabs connected to the same server. It never injects commands into the interactive terminal. Linux and macOS hosts are supported; the first CPU reading is `—` until a second sample is available.
 
-## Explorador SFTP
+## SFTP browser
 
-Con una sesión SSH activa, presioná el icono de carpeta **SFTP** para abrir el panel lateral. El explorador comienza en la última ruta que informó esa pestaña mediante OSC 7. Si no hay ruta o ya no se puede abrir, comienza en el home remoto sin interrumpirte. Esa carpeta permanece abierta mientras navegás, aunque cambie la ruta de la terminal.
+With an active SSH session, select the **SFTP** folder icon to open the side panel. The browser starts in the last path reported by that tab through OSC 7. If no path is available, it opens the remote home directory without interrupting you. The selected folder remains open while you browse, even if the terminal directory changes.
 
-Desde el panel se puede:
+The panel can:
 
-- navegar con breadcrumbs, doble clic, el botón de home o el botón de lápiz para escribir una ruta absoluta;
-- ordenar por nombre, tamaño, permisos, propietario o fecha;
-- mostrar u ocultar archivos ocultos;
-- crear carpetas;
-- renombrar o mover archivos y carpetas;
-- eliminar archivos o carpetas vacías con confirmación;
-- subir archivos mediante el selector o arrastrando desde Finder;
-- descargar archivos eligiendo su destino local;
-- observar y cancelar transferencias desde una cola compacta;
-- abrir archivos de texto directamente en Conexum Editor;
-- cerrar o redimensionar el panel sin interrumpir la terminal.
+- navigate with breadcrumbs, double-click, the Home button, or an absolute path;
+- sort by name, size, permissions, owner, or date;
+- show or hide hidden files;
+- create folders;
+- rename or move files and folders;
+- delete files or empty folders with confirmation;
+- upload files through the picker or drag and drop from Finder;
+- download files to a selected local destination;
+- monitor and cancel transfers in a compact queue;
+- open text files directly in Conexum Editor;
+- close or resize without interrupting the terminal.
 
-Conexum utiliza `/usr/bin/sftp` y el socket multiplexado de la sesión existente. No guarda credenciales ni implementa el protocolo SFTP. Los archivos locales sólo pueden transferirse después de seleccionarlos explícitamente mediante Finder, el diálogo de macOS o arrastrar y soltar.
+Conexum uses `/usr/bin/sftp` and the existing session's multiplexed socket. It neither stores credentials nor implements the SFTP protocol itself. Local files can be transferred only after you explicitly select them with Finder, a macOS dialog, or drag and drop.
 
-Al cancelar una transferencia, el servidor o la carpeta local pueden conservar un archivo parcial. Conexum lo deja visible para que el usuario decida si desea inspeccionarlo, reintentar la operación o eliminarlo; nunca borra archivos automáticamente después de una interrupción.
+Canceled transfers may leave a partial file on the server or in the local folder. Conexum leaves it visible so you can inspect, retry, or delete it; it never removes partial files automatically. Failed and canceled transfers include a retry button. Retrying validates the local path again and starts a new transfer without attempting to merge partial data.
 
-Las transferencias fallidas o canceladas muestran un botón de reintento. El reintento vuelve a comprobar la ruta local y comienza una transferencia nueva; no intenta combinar automáticamente datos parciales.
+## Backups and diagnostics
 
-## Respaldos y diagnóstico
+The Settings menu can export and import Conexum connections. A backup includes names, groups, destinations, ports, usernames, and configured paths, but never passwords, passphrases, or private-key contents. Exported files use restrictive local permissions.
 
-El menú de ajustes permite exportar e importar conexiones de Conexum. El respaldo incluye nombres, grupos, destinos, puertos, usuarios y rutas configuradas, pero nunca contiene contraseñas, passphrases ni el contenido de una clave privada. Los archivos exportados se escriben con permisos locales restrictivos.
-
-Con una pestaña seleccionada, **Diagnóstico** muestra únicamente datos sanitizados del perfil y del proceso OpenSSH: destino, puerto, usuario, IdentityFile, estado y código de salida. **Copiar diagnóstico** no incluye el contenido ni las pulsaciones de la terminal.
+With a tab selected, **SSH diagnostics** shows only sanitized profile and OpenSSH process data: destination, port, username, IdentityFile, status, and exit code. **Copy diagnostics** never includes terminal content or keystrokes.
 
 ## Conexum Editor
 
-Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP. El editor aparece dentro de Conexum, a la izquierda de la terminal, y podés arrastrar el divisor para ajustar el espacio. El árbol comienza en la última ruta informada por la pestaña mediante OSC 7 o, si no está disponible, en el home remoto. Podés escribir otra ruta absoluta en el explorador del Editor y presionar Enter o el botón de flecha; el botón de home regresa al directorio inicial del usuario remoto. Al abrir Editor desde SFTP se conserva la carpeta explorada, y al abrir un archivo se muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
+With an active SSH session, select **Editor** or open a file from SFTP. The editor appears inside Conexum beside the terminal, and you can drag the divider to resize it. Its tree starts at the most recent path reported through OSC 7 or at the remote home directory. You can enter another absolute path and press Enter or the arrow button; Home returns to the remote user's home directory. Opening Editor from SFTP preserves the browsed folder, and opening a file shows its parent folder. The editor reuses the existing multiplexed connection and does not request credentials again.
 
-La primera versión incluye:
+The first version includes:
 
-- árbol remoto SFTP cargado bajo demanda;
-- pestañas de documentos y resaltado de sintaxis mediante Monaco Editor;
-- búsqueda, reemplazo, números de línea y atajos habituales de edición;
-- guardado remoto con `⌘S`;
-- comprobación de la huella del archivo antes de sobrescribirlo;
-- confirmación si el archivo cambió en el servidor;
-- reemplazo mediante un archivo temporal remoto y conservación de permisos;
-- confirmación al cerrar documentos, el editor, la pestaña SSH o Conexum con cambios pendientes;
-- botón «Terminal completa» para ocultar el editor sin perder borradores; X y `⌘W` para cerrarlo con confirmación si hay cambios, sin interrumpir la sesión SSH; cambiar de pestaña o pasar a Inicio también conserva los borradores;
-- rechazo de archivos binarios, no UTF-8 o mayores a 2 MB.
+- an on-demand remote SFTP tree;
+- document tabs and Monaco syntax highlighting;
+- search, replace, line numbers, and standard editing shortcuts;
+- remote saving with `⌘S`;
+- fingerprint verification before overwriting;
+- confirmation if the server copy changed;
+- replacement through a remote temporary file while preserving permissions;
+- confirmation before closing documents, the editor, an SSH tab, or Conexum with pending changes;
+- a **Full terminal** button that hides the editor without losing drafts, while X and `⌘W` close it with confirmation when necessary;
+- rejection of binary, non-UTF-8, or larger-than-2-MB files.
 
-El editor depende de una sesión SSH activa. Si la sesión termina, el contenido abierto permanece visible, pero es necesario reconectarla para volver a navegar o guardar.
+The editor requires an active SSH session. If the session ends, open content remains visible, but you must reconnect before browsing or saving again.
 
-## Primer uso
+## First use
 
-1. Ejecutá `pnpm run desktop`.
-2. Hacé doble clic en **Terminal local** para usar esta Mac, o creá/importá una conexión SSH.
-3. Hacé doble clic sobre un servidor para abrir una sesión SSH.
-4. Repetí el doble clic para abrir otra sesión independiente del mismo servidor.
-5. Hacé doble clic sobre una pestaña para cerrarla con confirmación.
+1. Run `pnpm run desktop`.
+2. Double-click **Local terminal** to use this Mac, or create/import an SSH connection.
+3. Double-click a server to open an SSH session.
+4. Double-click it again to open another independent session to the same server.
+5. Double-click a tab to close it with confirmation.
 
-Si una conexión finaliza, podés usar **Reconectar** en la terminal o en la barra superior. Conexum conserva el historial visible de esa pestaña y abre una sesión SSH nueva con el mismo perfil.
+If a connection ends, use **Reconnect** in the terminal or toolbar. Conexum keeps the tab's visible history and opens a new SSH session with the same profile.
 
-Con dos o más sesiones abiertas, **Dividir** muestra dos terminales lado a lado. Al presionarlo nuevamente se convierte en una cuadrícula de hasta cuatro sesiones; una tercera pulsación vuelve a la vista única. La sesión activa se mantiene siempre dentro de la vista dividida y podés cambiarla desde las pestañas superiores o haciendo clic en otra terminal.
+With two or more sessions open, **Split** shows two terminals side by side. Select it again for a grid of up to four sessions; a third selection returns to a single view. The active session always remains in the split view, and you can switch sessions from the tabs or by selecting another terminal.
 
-Hacé clic derecho sobre el nombre de un grupo en la barra lateral para renombrarlo o eliminarlo. Eliminar un grupo borra sus perfiles guardados, pero no interrumpe las sesiones que ya estén abiertas.
+Right-click a group name in the sidebar to rename or delete it. Deleting a group removes its saved profiles but does not interrupt sessions that are already open.
 
-## Seguridad
+## Security
 
-- Conexum no guarda contraseñas SSH.
-- Las claves privadas no se copian: solamente se conserva la ruta del `IdentityFile`.
-- Las passphrases pueden ser administradas por `ssh-agent` y macOS Keychain.
-- Las contraseñas, huellas nuevas y advertencias de OpenSSH aparecen directamente en la terminal.
-- El renderer de Electron no tiene acceso directo a Node.js ni al sistema de archivos.
-- Toda comunicación privilegiada pasa por una API de preload pequeña y validada.
-- La telemetría usa un proceso SSH auxiliar en modo no interactivo y no puede solicitar credenciales.
-- El directorio remoto llega por OSC 7; Conexum no analiza la pantalla ni registra teclas.
-- El directorio local se consulta con `lsof` sobre el proceso del shell cada dos segundos mientras la pestaña local está visible.
-- SFTP funciona en un proceso separado con `BatchMode=yes`, sin reenviar puertos ni solicitar credenciales nuevas.
-- Eliminar contenido remoto siempre requiere confirmación y las carpetas sólo se eliminan cuando están vacías.
-- El editor comprueba conflictos antes de guardar y nunca guarda silenciosamente sobre una versión remota diferente.
+- Conexum does not store SSH passwords.
+- Private keys are never copied; only the `IdentityFile` path is retained.
+- `ssh-agent` and macOS Keychain can manage passphrases.
+- Password prompts, new fingerprints, and OpenSSH warnings appear directly in the terminal.
+- The Electron renderer has no direct access to Node.js or the filesystem.
+- All privileged communication goes through a small, validated preload API.
+- Telemetry uses a separate non-interactive SSH process and cannot request credentials.
+- Remote directories arrive through OSC 7; Conexum does not scrape the terminal screen or record keystrokes.
+- The local directory is checked with `lsof` against the shell process every two seconds while the local tab is visible.
+- SFTP runs in a separate process with `BatchMode=yes`, without forwarding ports or requesting new credentials.
+- Deleting remote content always requires confirmation, and folders are removed only when empty.
+- The editor checks for conflicts before saving and never silently overwrites a different remote version.
 
-No incluyas contraseñas, claves privadas ni información sensible en reportes de errores.
+Never include passwords, private keys, or sensitive information in bug reports.
 
-## Cómo colaborar y probar
+## Contributing and testing
 
-Antes de enviar cambios:
+Before submitting changes:
 
 ```bash
 pnpm install
@@ -221,46 +220,46 @@ pnpm run check
 pnpm run desktop
 ```
 
-Al probar una funcionalidad, indicá:
+When testing a feature, include:
 
-- modelo de Mac y versión de macOS;
-- arquitectura Apple Silicon o Intel;
-- versión de Node.js y pnpm;
-- shell remoto utilizado;
-- pasos para reproducir el comportamiento;
-- resultado esperado y resultado observado.
+- Mac model and macOS version;
+- Apple Silicon or Intel architecture;
+- Node.js and pnpm versions;
+- remote shell;
+- reproduction steps;
+- expected and observed results.
 
-La matriz mínima para cambios de escritorio es:
+The minimum desktop test matrix is:
 
-| Área | Apple Silicon | Intel |
+| Area | Apple Silicon | Intel |
 | --- | --- | --- |
-| Inicio y navegación | Obligatorio antes de publicar | Verificación de colaborador |
-| Dos sesiones del mismo perfil | Obligatorio antes de publicar | Verificación de colaborador |
-| Cierre de una pestaña sin afectar otra | Obligatorio antes de publicar | Verificación de colaborador |
-| Importación de SSH config e IdentityFile | Obligatorio antes de publicar | Verificación de colaborador |
-| Generación y apertura de `Conexum.app` | Automático y manual | Verificación de colaborador |
+| Home and navigation | Required before release | Contributor verification |
+| Two sessions using one profile | Required before release | Contributor verification |
+| Close one tab without affecting another | Required before release | Contributor verification |
+| SSH config and IdentityFile import | Required before release | Contributor verification |
+| Build and open `Conexum.app` | Automated and manual | Contributor verification |
 
-El workflow automático verifica el entorno macOS hospedado por GitHub. Antes de una publicación pública, Apple Silicon e Intel deberán validarse también de forma manual en hardware real.
+The automated workflow validates the GitHub-hosted macOS environment. Apple Silicon and Intel must also be tested manually on real hardware before a public release.
 
-Las contribuciones deberían mantener los principios centrales del proyecto: terminal primero, poco ruido visual, reutilización de herramientas maduras y ningún secreto almacenado de forma insegura.
+Contributions should preserve the project's core principles: terminal first, low visual noise, reuse mature tools, and never store secrets insecurely.
 
-## Tecnologías
+## Technology
 
 - Electron
 - React + TypeScript
 - Vite
 - xterm.js
 - node-pty
-- OpenSSH de macOS
+- macOS OpenSSH
 - Lucide Icons
 
-## Documentación
+## Documentation
 
-- [Roadmap y backlog propuesto](ROADMAP.md)
-- [Visión y especificación original](idea.md)
-- [Integración OSC 7 para Bash, Zsh y Fish](docs/shell-integration.md)
-- [Historial de cambios](CHANGELOG.md)
+- [Roadmap and proposed backlog](ROADMAP.md)
+- [Original vision and specification](idea.md)
+- [OSC 7 integration for Bash, Zsh, and Fish](docs/shell-integration.md)
+- [Changelog](CHANGELOG.md)
 
-## Estado de distribución
+## Distribution status
 
-`pnpm run package:mac` genera un bundle local identificado como Conexum. Este paquete sirve para desarrollo y pruebas entre colaboradores; aún no está firmado, notarizado ni acompañado por un instalador. Esos pasos permanecen planificados antes de una distribución pública.
+`pnpm run package:mac` generates a local bundle identified as Conexum. This package is intended for development and testing among contributors; it is not yet signed, notarized, or distributed with an installer. Those steps remain planned before public distribution.

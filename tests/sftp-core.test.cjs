@@ -34,8 +34,8 @@ test('validates and quotes remote SFTP paths', () => {
   assert.equal(validateRemotePath('/srv/app/../logs'), '/srv/logs')
   assert.equal(quoteSftpPath('/srv/a "quoted" file'), '"/srv/a \\"quoted\\" file"')
   assert.equal(quoteSftpPath('/srv/report[1]*?.txt'), '"/srv/report\\[1]\\*\\?.txt"')
-  assert.throws(() => validateRemotePath('relative/path'), /absoluta/i)
-  assert.throws(() => validateRemotePath('/tmp/bad\npath'), /no es válida/i)
+  assert.throws(() => validateRemotePath('relative/path'), /absolute/i)
+  assert.throws(() => validateRemotePath('/tmp/bad\npath'), /not valid/i)
 })
 
 test('builds SFTP arguments over the existing multiplexed connection', () => {
@@ -59,7 +59,7 @@ test('builds safe list, mutation, and transfer commands', () => {
   assert.equal(buildMutationBatch('mkdir', '/srv/new folder'), 'mkdir "/srv/new folder"\n')
   assert.equal(buildMutationBatch('rename', '/srv/old', '/srv/new'), 'rename "/srv/old" "/srv/new"\n')
   assert.equal(buildTransferCommand('upload', '/Users/test/file.txt', '/srv/file.txt'), 'put "/Users/test/file.txt" "/srv/file.txt"')
-  assert.throws(() => buildMutationBatch('execute', '/srv/app'), /no permitida/i)
+  assert.throws(() => buildMutationBatch('execute', '/srv/app'), /not allowed/i)
 })
 
 test('builds safe remote editor read and atomic write batches', () => {
@@ -72,14 +72,14 @@ test('builds safe remote editor read and atomic write batches', () => {
     'rename "/srv/app/.file.ts.conexum.tmp" "/srv/app/file.ts"',
     '',
   ].join('\n'))
-  assert.throws(() => buildWriteFileBatch('/tmp/file', '/srv/app/file', '/tmp/file', '-rw-r--r--'), /misma carpeta/i)
+  assert.throws(() => buildWriteFileBatch('/tmp/file', '/srv/app/file', '/tmp/file', '-rw-r--r--'), /same folder/i)
 })
 
 test('decodes only valid UTF-8 text without rejecting a literal replacement character', () => {
   assert.equal(decodeEditorText(Buffer.from('café \uFFFD')), 'café \uFFFD')
   assert.equal(decodeEditorText(Buffer.from([0xef, 0xbb, 0xbf, 0x61])), '\uFEFFa')
   assert.throws(() => decodeEditorText(Buffer.from([0xc3, 0x28])), /UTF-8/i)
-  assert.throws(() => decodeEditorText(Buffer.from([0x61, 0x00, 0x62])), /binario/i)
+  assert.throws(() => decodeEditorText(Buffer.from([0x61, 0x00, 0x62])), /binary/i)
 })
 
 test('parses and sorts the current macOS OpenSSH long-list format', () => {
@@ -109,9 +109,9 @@ test('uses the remote home reported by SFTP when no directory was requested', ()
 
 test('turns common SFTP failures into actionable messages', () => {
   assert.match(formatSftpError('subsystem request failed on channel 0'), /subsistema SFTP/i)
-  assert.match(formatSftpError('Control socket connect(/tmp/cx/socket): No such file or directory'), /todavía no está lista/i)
+  assert.match(formatSftpError('Control socket connect(/tmp/cx/socket): No such file or directory'), /not ready/i)
   assert.match(formatSftpError('remote open("/root/file"): Permission denied'), /permiso denegado/i)
-  assert.match(formatSftpError('', '', { timedOut: true }), /tardó demasiado/i)
+  assert.match(formatSftpError('', '', { timedOut: true }), /too long/i)
 })
 
 test('parses a real listing from the macOS OpenSSH SFTP client', {

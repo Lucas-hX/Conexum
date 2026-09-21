@@ -14,6 +14,7 @@ import {
   FileUp,
   Folder,
   FolderOpen,
+  Languages,
   Home,
   Import,
   KeyRound,
@@ -37,6 +38,7 @@ import {
   X,
 } from 'lucide-react'
 import type { ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
+import { useI18n } from './i18n'
 
 type ToolPanel = 'sftp' | 'editor' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -70,8 +72,8 @@ const LOCAL_PROFILE_ID = 'conexum-local'
 const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
   id: LOCAL_PROFILE_ID,
   kind: 'local',
-  name: 'Terminal local',
-  group: 'Esta Mac',
+  name: 'Local terminal',
+  group: 'This Mac',
   host: 'localhost',
   port: 0,
   username: '',
@@ -130,6 +132,7 @@ const TerminalView = forwardRef<TerminalHandle, {
   onDirectoryChange(directory: string): void
   onIdentityNeeded(profile: ConnectionProfile): void
 }>(function TerminalView({ sessionId, onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
+  const { text, error: localizeError } = useI18n()
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -162,7 +165,7 @@ const TerminalView = forwardRef<TerminalHandle, {
     terminalRef.current = terminal
     fitRef.current = fitAddon
 
-    terminal.write('\x1b[90m[Conexum] Iniciando terminal…\x1b[0m')
+    terminal.write(`\x1b[90m[Conexum] ${text('Starting terminal…', 'Iniciando terminal…')}\x1b[0m`)
 
     const inputDisposable = terminal.onData((data) => {
       if (sessionIdRef.current) window.conexum?.ssh.write(sessionIdRef.current, data)
@@ -183,7 +186,10 @@ const TerminalView = forwardRef<TerminalHandle, {
     const removeExitListener = window.conexum?.ssh.onExit(({ sessionId, exitCode }) => {
       if (sessionId !== sessionIdRef.current) return
       sessionIdRef.current = null
-      terminal.writeln(`\r\n\x1b[90m[Conexum] La sesión ${activeProfileRef.current?.kind === 'local' ? 'local' : 'SSH'} finalizó con código ${exitCode}.\x1b[0m`)
+      terminal.writeln(`\r\n\x1b[90m[Conexum] ${text(
+        `The ${activeProfileRef.current?.kind === 'local' ? 'local' : 'SSH'} session ended with exit code ${exitCode}.`,
+        `La sesión ${activeProfileRef.current?.kind === 'local' ? 'local' : 'SSH'} finalizó con código ${exitCode}.`,
+      )}\x1b[0m`)
       onStatusChange('disconnected')
       if (authenticationFailedRef.current && activeProfileRef.current?.kind !== 'local' && activeProfileRef.current && !activeProfileRef.current.identityFile) {
         onIdentityNeeded(activeProfileRef.current)
@@ -215,8 +221,8 @@ const TerminalView = forwardRef<TerminalHandle, {
       if (!terminal || !fitAddon) return
 
       if (!window.conexum) {
-        terminal.writeln('\r\n\x1b[31m[Conexum] La terminal real sólo está disponible en la aplicación de escritorio.\x1b[0m')
-        terminal.writeln('Ejecutá: pnpm run desktop')
+        terminal.writeln(`\r\n\x1b[31m[Conexum] ${text('The real terminal is only available in the desktop app.', 'La terminal real sólo está disponible en la aplicación de escritorio.')}\x1b[0m`)
+        terminal.writeln(text('Run: pnpm run desktop', 'Ejecutá: pnpm run desktop'))
         onStatusChange('error')
         return
       }
@@ -226,10 +232,10 @@ const TerminalView = forwardRef<TerminalHandle, {
       authenticationFailedRef.current = false
       if (options.preserveHistory) {
         terminal.writeln('')
-        terminal.writeln(`\x1b[90m[Conexum] Reabriendo ${profile.kind === 'local' ? 'la terminal local' : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
+        terminal.writeln(`\x1b[90m[Conexum] ${text('Reopening', 'Reabriendo')} ${profile.kind === 'local' ? text('the local terminal', 'la terminal local') : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
       } else {
         terminal.reset()
-        terminal.writeln(`\x1b[90m[Conexum] Abriendo ${profile.kind === 'local' ? 'la terminal de esta Mac' : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
+        terminal.writeln(`\x1b[90m[Conexum] ${text('Opening', 'Abriendo')} ${profile.kind === 'local' ? text('this Mac’s terminal', 'la terminal de esta Mac') : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
       }
       onStatusChange('connecting')
 
@@ -245,10 +251,10 @@ const TerminalView = forwardRef<TerminalHandle, {
         terminal.focus()
       } catch (error) {
         sessionIdRef.current = null
-        const message = error instanceof Error ? error.message : 'No se pudo iniciar la terminal.'
+        const message = error instanceof Error ? localizeError(error.message) : text('Could not start the terminal.', 'No se pudo iniciar la terminal.')
         terminal.writeln(`\r\n\x1b[31m[Conexum] ${message}\x1b[0m`)
         onStatusChange('error')
-        if (/archivo de identidad/i.test(message)) onIdentityNeeded(profile)
+        if (/archivo de identidad|identity file/i.test(message)) onIdentityNeeded(profile)
       }
     },
     disconnect() {
@@ -256,10 +262,10 @@ const TerminalView = forwardRef<TerminalHandle, {
       if (!sessionIdRef.current) return
       window.conexum?.ssh.disconnect(sessionIdRef.current)
       sessionIdRef.current = null
-      terminal?.writeln('\r\n\x1b[90m[Conexum] Desconectado por el usuario.\x1b[0m')
+      terminal?.writeln(`\r\n\x1b[90m[Conexum] ${text('Disconnected by user.', 'Desconectado por el usuario.')}\x1b[0m`)
       onStatusChange('disconnected')
     },
-  }), [onIdentityNeeded, onStatusChange, sessionId])
+  }), [localizeError, onIdentityNeeded, onStatusChange, sessionId, text])
 
   return <div className="terminal-host" ref={hostRef} aria-label="Terminal" />
 })
@@ -309,6 +315,7 @@ function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect }: {
   onSelect(profile: ConnectionProfile): void
   onConnect(profile: ConnectionProfile): void
 }) {
+  const { text } = useI18n()
   const recentProfiles = recentIds
     .map((id) => profiles.find((profile) => profile.id === id))
     .filter((profile): profile is ConnectionProfile => Boolean(profile))
@@ -323,13 +330,13 @@ function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect }: {
       <section className="welcome-banner" style={{ backgroundImage: `linear-gradient(90deg, #0b1119 0%, #0b1119ec 42%, #0b111966 76%), url(${BRAND_BANNER})` }}>
         <div className="welcome-copy">
           <div className="welcome-brand"><img src={BRAND_ICON} alt="" /><span>Conexum</span></div>
-          <p>Terminal local y conexiones SSH, en un solo lugar.</p>
+          <p>{text('Local terminal and SSH connections, all in one place.', 'Terminal local y conexiones SSH, en un solo lugar.')}</p>
         </div>
       </section>
 
       <div className="welcome-content">
         <section className="home-section">
-          <div className="home-section-heading"><div><h2>Acceso rápido</h2></div><span>Doble clic para abrir</span></div>
+          <div className="home-section-heading"><div><h2>{text('Quick access', 'Acceso rápido')}</h2></div><span>{text('Double-click to open', 'Doble clic para abrir')}</span></div>
           <div className="server-shortcuts">
             {featuredProfiles.map((profile) => (
               <button
@@ -337,7 +344,7 @@ function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect }: {
                 className={`server-shortcut ${selectedId === profile.id ? 'selected' : ''}`}
                 onClick={() => onSelect(profile)}
                 onDoubleClick={() => onConnect(profile)}
-                title={`Doble clic para abrir ${profile.name}`}
+                title={text(`Double-click to open ${profile.name}`, `Doble clic para abrir ${profile.name}`)}
               >
                 <span className="shortcut-icon">{profile.kind === 'local' ? <Monitor size={17} /> : <Server size={17} />}</span>
                 <span className="shortcut-copy"><strong>{profile.name}</strong><small>{profile.kind === 'local' ? profile.group : `${profile.username}@${profile.host}`}</small></span>
@@ -357,8 +364,9 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
   onClose(): void
   onSave(profile: ConnectionProfile): void
 }) {
+  const { text } = useI18n()
   const [name, setName] = useState(profile?.name ?? '')
-  const [group, setGroup] = useState(profile?.group ?? 'Mis servidores')
+  const [group, setGroup] = useState(profile?.group ?? text('My servers', 'Mis servidores'))
   const [host, setHost] = useState(profile?.host ?? '')
   const [port, setPort] = useState(String(profile?.port ?? 22))
   const [username, setUsername] = useState(profile?.username ?? '')
@@ -374,9 +382,9 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
     if (!identityFile || !window.conexum) return
     try {
       await window.conexum.profiles.forgetIdentityPassphrase(identityFile)
-      setKeychainMessage('La passphrase fue eliminada de ssh-agent y Keychain.')
+      setKeychainMessage(text('The passphrase was removed from ssh-agent and Keychain.', 'La passphrase fue eliminada de ssh-agent y Keychain.'))
     } catch {
-      setKeychainMessage('No se encontró una passphrase guardada para esta clave.')
+      setKeychainMessage(text('No saved passphrase was found for this key.', 'No se encontró una passphrase guardada para esta clave.'))
     }
   }
 
@@ -386,7 +394,7 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
     onSave({
       id: profile?.id ?? crypto.randomUUID(),
       name: name.trim(),
-      group: group.trim() || 'Mis servidores',
+      group: group.trim() || text('My servers', 'Mis servidores'),
       host: host.trim(),
       port: Number(port),
       username: username.trim(),
@@ -400,26 +408,26 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <form className="connection-modal" onSubmit={submit}>
         <div className="modal-heading">
-          <div><small>{profile ? 'EDITAR PERFIL' : 'NUEVO PERFIL'}</small><h2>Conexión SSH</h2></div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button>
+          <div><small>{profile ? text('EDIT PROFILE', 'EDITAR PERFIL') : text('NEW PROFILE', 'NUEVO PERFIL')}</small><h2>{text('SSH connection', 'Conexión SSH')}</h2></div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label={text('Close', 'Cerrar')}><X size={18} /></button>
         </div>
-        {identityRequired && <div className="identity-warning"><strong>OpenSSH no encontró una clave válida</strong><span>Seleccioná el IdentityFile correspondiente y guardá el perfil para volver a conectar.</span></div>}
+        {identityRequired && <div className="identity-warning"><strong>{text('OpenSSH could not find a valid key', 'OpenSSH no encontró una clave válida')}</strong><span>{text('Select the matching IdentityFile and save the profile to reconnect.', 'Seleccioná el IdentityFile correspondiente y guardá el perfil para volver a conectar.')}</span></div>}
         <div className="form-grid">
-          <label className="full-field"><span>Nombre</span><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Servidor web" required /></label>
-          <label className="full-field"><span>Grupo</span><input value={group} onChange={(e) => setGroup(e.target.value)} placeholder="Producción" /></label>
-          <label className="host-field"><span>Servidor o IP</span><input value={host} onChange={(e) => setHost(e.target.value)} placeholder="192.168.1.20" required /></label>
-          <label><span>Puerto</span><input type="number" min="1" max="65535" value={port} onChange={(e) => setPort(e.target.value)} required /></label>
-          <label className="full-field"><span>Usuario</span><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="ubuntu" required /></label>
-          <label className="full-field"><span>Identity file (opcional)</span><div className="file-picker"><input value={identityFile} onChange={(e) => setIdentityFile(e.target.value)} placeholder="~/.ssh/id_ed25519" /><button type="button" onClick={chooseIdentityFile}><FolderOpen size={14} />Seleccionar…</button></div></label>
+          <label className="full-field"><span>{text('Name', 'Nombre')}</span><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={text('Web server', 'Servidor web')} required /></label>
+          <label className="full-field"><span>{text('Group', 'Grupo')}</span><input value={group} onChange={(e) => setGroup(e.target.value)} placeholder={text('Production', 'Producción')} /></label>
+          <label className="host-field"><span>{text('Host or IP', 'Servidor o IP')}</span><input value={host} onChange={(e) => setHost(e.target.value)} placeholder="192.168.1.20" required /></label>
+          <label><span>{text('Port', 'Puerto')}</span><input type="number" min="1" max="65535" value={port} onChange={(e) => setPort(e.target.value)} required /></label>
+          <label className="full-field"><span>{text('Username', 'Usuario')}</span><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="ubuntu" required /></label>
+          <label className="full-field"><span>{text('Identity file (optional)', 'Identity file (opcional)')}</span><div className="file-picker"><input value={identityFile} onChange={(e) => setIdentityFile(e.target.value)} placeholder="~/.ssh/id_ed25519" /><button type="button" onClick={chooseIdentityFile}><FolderOpen size={14} />{text('Choose…', 'Seleccionar…')}</button></div></label>
         </div>
         <div className="security-note">
-          <ShieldCheck size={18} /><div><strong>Protegido por OpenSSH y Keychain</strong>
-          <span>Conexum guarda solamente la ruta. OpenSSH puede recordar la passphrase de la clave mediante ssh-agent y el llavero de macOS.</span></div>
+          <ShieldCheck size={18} /><div><strong>{text('Protected by OpenSSH and Keychain', 'Protegido por OpenSSH y Keychain')}</strong>
+          <span>{text('Conexum stores only the path. OpenSSH can remember the key passphrase through ssh-agent and macOS Keychain.', 'Conexum guarda solamente la ruta. OpenSSH puede recordar la passphrase de la clave mediante ssh-agent y el llavero de macOS.')}</span></div>
         </div>
-        {profile && identityFile && <div className="keychain-actions"><button type="button" onClick={forgetPassphrase}>Olvidar passphrase guardada</button>{keychainMessage && <span>{keychainMessage}</span>}</div>}
+        {profile && identityFile && <div className="keychain-actions"><button type="button" onClick={forgetPassphrase}>{text('Forget saved passphrase', 'Olvidar passphrase guardada')}</button>{keychainMessage && <span>{keychainMessage}</span>}</div>}
         <div className="modal-actions">
-          <button type="button" className="secondary-button" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="primary-button">{profile ? 'Guardar cambios' : 'Guardar conexión'}</button>
+          <button type="button" className="secondary-button" onClick={onClose}>{text('Cancel', 'Cancelar')}</button>
+          <button type="submit" className="primary-button">{profile ? text('Save changes', 'Guardar cambios') : text('Save connection', 'Guardar conexión')}</button>
         </div>
       </form>
     </div>
@@ -427,43 +435,48 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
 }
 
 function DiagnosticsModal({ diagnostics, onClose }: { diagnostics: SshDiagnostics; onClose(): void }) {
+  const { text } = useI18n()
   const [copied, setCopied] = useState(false)
   const copy = async () => {
     const success = await window.conexum?.ssh.copyDiagnostics(diagnostics.sessionId)
     setCopied(Boolean(success))
   }
-  const status = diagnostics.status === 'connected' ? 'Conectado' : diagnostics.status === 'error' ? 'Error' : 'Desconectado'
+  const status = diagnostics.status === 'connected' ? text('Connected', 'Conectado') : diagnostics.status === 'error' ? text('Error', 'Error') : text('Disconnected', 'Desconectado')
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="diagnostics-modal">
-        <div className="modal-heading"><div><small>SESIÓN SSH</small><h2>Diagnóstico de conexión</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></div>
+        <div className="modal-heading"><div><small>{text('SSH SESSION', 'SESIÓN SSH')}</small><h2>{text('Connection diagnostics', 'Diagnóstico de conexión')}</h2></div><button className="icon-button" onClick={onClose} aria-label={text('Close', 'Cerrar')}><X size={18} /></button></div>
         <dl className="diagnostics-grid">
           <dt>Host</dt><dd>{diagnostics.host}</dd>
-          <dt>Puerto</dt><dd>{diagnostics.port}</dd>
-          <dt>Usuario</dt><dd>{diagnostics.username}</dd>
-          <dt>Identity file</dt><dd title={diagnostics.identityFile ?? undefined}>{diagnostics.identityFile || 'No especificado'}</dd>
-          <dt>Alias SSH</dt><dd>{diagnostics.sshAlias || 'No especificado'}</dd>
-          <dt>Estado</dt><dd><span className={`diagnostic-state ${diagnostics.status}`}>{status}</span></dd>
-          <dt>Último error</dt><dd>{diagnostics.lastError || 'Ninguno'}</dd>
+          <dt>{text('Port', 'Puerto')}</dt><dd>{diagnostics.port}</dd>
+          <dt>{text('Username', 'Usuario')}</dt><dd>{diagnostics.username}</dd>
+          <dt>Identity file</dt><dd title={diagnostics.identityFile ?? undefined}>{diagnostics.identityFile || text('Not specified', 'No especificado')}</dd>
+          <dt>SSH alias</dt><dd>{diagnostics.sshAlias || text('Not specified', 'No especificado')}</dd>
+          <dt>{text('Status', 'Estado')}</dt><dd><span className={`diagnostic-state ${diagnostics.status}`}>{status}</span></dd>
+          <dt>{text('Last error', 'Último error')}</dt><dd>{diagnostics.lastError || text('None', 'Ninguno')}</dd>
         </dl>
-        <div className="diagnostics-note"><ShieldCheck size={15} /><span>El diagnóstico no incluye contraseñas, claves privadas ni contenido de la terminal.</span></div>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Cerrar</button><button className="primary-button" onClick={() => void copy()}><ClipboardCopy size={14} />{copied ? 'Copiado' : 'Copiar diagnóstico'}</button></div>
+        <div className="diagnostics-note"><ShieldCheck size={15} /><span>{text('Diagnostics never include passwords, private keys, or terminal content.', 'El diagnóstico no incluye contraseñas, claves privadas ni contenido de la terminal.')}</span></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>{text('Close', 'Cerrar')}</button><button className="primary-button" onClick={() => void copy()}><ClipboardCopy size={14} />{copied ? text('Copied', 'Copiado') : text('Copy diagnostics', 'Copiar diagnóstico')}</button></div>
       </section>
     </div>
   )
 }
 
-const statusLabels: Record<SessionStatus, string> = {
-  idle: 'Sin conexión',
-  connecting: 'Conectando…',
-  connected: 'Sesión activa',
-  disconnected: 'Desconectado',
-  error: 'Error',
-}
-
 export function App() {
+  const { language, setLanguage, text, error: localizeError } = useI18n()
+  const statusLabels: Record<SessionStatus, string> = {
+    idle: text('Not connected', 'Sin conexión'),
+    connecting: text('Connecting…', 'Conectando…'),
+    connected: text('Active session', 'Sesión activa'),
+    disconnected: text('Disconnected', 'Desconectado'),
+    error: text('Error', 'Error'),
+  }
   const [profiles, setProfiles] = useState<ConnectionProfile[]>(loadProfiles)
-  const [localProfile, setLocalProfile] = useState<ConnectionProfile>(DEFAULT_LOCAL_PROFILE)
+  const [localProfile, setLocalProfile] = useState<ConnectionProfile>(() => ({
+    ...DEFAULT_LOCAL_PROFILE,
+    name: text('Local terminal', 'Terminal local'),
+    group: text('This Mac', 'Esta Mac'),
+  }))
   const [localHomeDirectory, setLocalHomeDirectory] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(() => loadProfiles()[0]?.id ?? LOCAL_PROFILE_ID)
   const [mainView, setMainView] = useState<MainView>('home')
@@ -519,12 +532,30 @@ export function App() {
 
   useEffect(() => {
     void window.conexum?.local.getMachineInfo().then((machine) => {
-      const next = { ...DEFAULT_LOCAL_PROFILE, group: machine.name, username: machine.username }
+      const next = { ...DEFAULT_LOCAL_PROFILE, name: text('Local terminal', 'Terminal local'), group: machine.name, username: machine.username }
       setLocalProfile(next)
       setLocalHomeDirectory(machine.homeDirectory)
       setSessions((current) => current.map((session) => session.profile.id === LOCAL_PROFILE_ID ? { ...session, profile: next } : session))
     }).catch(() => {})
-  }, [])
+  }, [language, text])
+
+  useEffect(() => {
+    const name = text('Local terminal', 'Terminal local')
+    const fallbackGroup = text('This Mac', 'Esta Mac')
+    setLocalProfile((current) => ({
+      ...current,
+      name,
+      group: current.group === 'This Mac' || current.group === 'Esta Mac' ? fallbackGroup : current.group,
+    }))
+    setSessions((current) => current.map((session) => session.profile.id === LOCAL_PROFILE_ID ? {
+      ...session,
+      profile: {
+        ...session.profile,
+        name,
+        group: session.profile.group === 'This Mac' || session.profile.group === 'Esta Mac' ? fallbackGroup : session.profile.group,
+      },
+    } : session))
+  }, [language, text])
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles))
@@ -618,8 +649,8 @@ export function App() {
   }, [])
 
   const closeEditor = useCallback((sessionId: string, state: EditorState) => {
-    if (state.saving) { window.alert('Esperá a que termine el guardado remoto antes de cerrar el editor.'); return }
-    if (state.dirty && !window.confirm('Hay cambios sin guardar en el editor. ¿Cerrarlo y descartarlos?')) return
+    if (state.saving) { window.alert(text('Wait for the remote save to finish before closing the editor.', 'Esperá a que termine el guardado remoto antes de cerrar el editor.')); return }
+    if (state.dirty && !window.confirm(text('The editor has unsaved changes. Close it and discard them?', 'Hay cambios sin guardar en el editor. ¿Cerrarlo y descartarlos?'))) return
     setEditorPanels((current) => current.filter((panel) => panel.sessionId !== sessionId))
     setEditorStates((current) => {
       const next = { ...current }
@@ -627,7 +658,7 @@ export function App() {
       return next
     })
     setActiveTool(null)
-  }, [])
+  }, [text])
 
   useEffect(() => {
     if (splitMode && sessions.length < 2) setSplitMode(0)
@@ -720,11 +751,11 @@ export function App() {
 
   const closeSessionTab = (session: SshSessionTab) => {
     const editorState = editorStates[session.id]
-    if (editorState?.saving) { window.alert('Esperá a que termine el guardado remoto antes de cerrar esta sesión.'); return }
+    if (editorState?.saving) { window.alert(text('Wait for the remote save to finish before closing this session.', 'Esperá a que termine el guardado remoto antes de cerrar esta sesión.')); return }
     const active = session.status === 'connected' || session.status === 'connecting'
     const message = (active
-      ? `¿Cerrar la pestaña de ${session.profile.name} y finalizar esta sesión activa?`
-      : `¿Cerrar la pestaña de ${session.profile.name}?`) + (editorState?.dirty ? ' Se perderán los cambios sin guardar del editor.' : '')
+      ? text(`Close the ${session.profile.name} tab and end this active session?`, `¿Cerrar la pestaña de ${session.profile.name} y finalizar esta sesión activa?`)
+      : text(`Close the ${session.profile.name} tab?`, `¿Cerrar la pestaña de ${session.profile.name}?`)) + (editorState?.dirty ? text(' Unsaved editor changes will be lost.', ' Se perderán los cambios sin guardar del editor.') : '')
     if (!window.confirm(message)) return
     if (active) terminalRefs.current.get(session.id)?.disconnect()
 
@@ -763,7 +794,7 @@ export function App() {
   }
 
   const renameGroup = (group: string) => {
-    const value = window.prompt('Nuevo nombre del grupo:', group)?.trim()
+    const value = window.prompt(text('New group name:', 'Nuevo nombre del grupo:'), group)?.trim()
     if (!value || value === group) {
       setContextMenu(null)
       return
@@ -783,8 +814,11 @@ export function App() {
     const groupProfiles = profiles.filter((profile) => profile.group === group)
     if (!groupProfiles.length) return
     const activeCount = sessions.filter((session) => groupProfiles.some((profile) => profile.id === session.profile.id)).length
-    const detail = activeCount ? ` Las ${activeCount} pestaña${activeCount === 1 ? '' : 's'} abierta${activeCount === 1 ? '' : 's'} seguirá${activeCount === 1 ? '' : 'n'} funcionando hasta que la cierres.` : ''
-    if (!window.confirm(`¿Eliminar el grupo “${group}” y sus ${groupProfiles.length} conexiones?${detail}`)) return
+    const detail = activeCount ? text(
+      ` The ${activeCount} open tab${activeCount === 1 ? '' : 's'} will keep running until you close ${activeCount === 1 ? 'it' : 'them'}.`,
+      ` Las ${activeCount} pestaña${activeCount === 1 ? '' : 's'} abierta${activeCount === 1 ? '' : 's'} seguirá${activeCount === 1 ? '' : 'n'} funcionando hasta que la cierres.`,
+    ) : ''
+    if (!window.confirm(text(`Delete the “${group}” group and its ${groupProfiles.length} connections?${detail}`, `¿Eliminar el grupo “${group}” y sus ${groupProfiles.length} conexiones?${detail}`))) return
     setProfiles((current) => {
       const remaining = current.filter((profile) => profile.group !== group)
       setSelectedId((selectedProfileId) => selectedProfileId === LOCAL_PROFILE_ID || remaining.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : remaining[0]?.id ?? LOCAL_PROFILE_ID)
@@ -824,9 +858,9 @@ export function App() {
     setSettingsMessage(null)
     try {
       const destination = await window.conexum?.profiles.exportBackup(profiles)
-      if (destination) setSettingsMessage('Respaldo exportado correctamente.')
+      if (destination) setSettingsMessage(text('Backup exported successfully.', 'Respaldo exportado correctamente.'))
     } catch (backupError) {
-      setSettingsMessage(backupError instanceof Error ? backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '') : 'No se pudo exportar el respaldo.')
+      setSettingsMessage(backupError instanceof Error ? localizeError(backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '')) : text('Could not export the backup.', 'No se pudo exportar el respaldo.'))
     }
   }
 
@@ -847,9 +881,9 @@ export function App() {
       })
       setProfiles((current) => [...current, ...additions])
       setCollapsedGroups((current) => new Set([...current, ...imported.map((profile) => profile.group)]))
-      setSettingsMessage(`${additions.length} ${additions.length === 1 ? 'conexión importada' : 'conexiones importadas'}.`)
+      setSettingsMessage(text(`${additions.length} ${additions.length === 1 ? 'connection' : 'connections'} imported.`, `${additions.length} ${additions.length === 1 ? 'conexión importada' : 'conexiones importadas'}.`))
     } catch (backupError) {
-      setSettingsMessage(backupError instanceof Error ? backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '') : 'No se pudo importar el respaldo.')
+      setSettingsMessage(backupError instanceof Error ? localizeError(backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '')) : text('Could not import the backup.', 'No se pudo importar el respaldo.'))
     }
   }
 
@@ -956,26 +990,28 @@ export function App() {
     <main className="app-shell">
       <header className="titlebar">
         <div className="brand"><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></div>
-        <nav className="toolbar" aria-label="Herramientas principales">
-          <ToolButton icon={<Plus size={16} />} label="Nueva conexión" onClick={openNewProfile} />
+        <nav className="toolbar" aria-label={text('Main tools', 'Herramientas principales')}>
+          <ToolButton icon={<Plus size={16} />} label={text('New connection', 'Nueva conexión')} onClick={openNewProfile} />
           <ToolButton
             icon={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? <Square size={14} /> : <Play size={15} />}
-            label={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? 'Desconectar' : mainView === 'terminal' && activeSession ? 'Reconectar' : 'Conectar'}
+            label={mainView === 'terminal' && activeSession && (activeSession.status === 'connected' || activeSession.status === 'connecting') ? text('Disconnect', 'Desconectar') : mainView === 'terminal' && activeSession ? text('Reconnect', 'Reconectar') : text('Connect', 'Conectar')}
             disabled={mainView === 'terminal' ? !activeSession : !selected}
             accent
             onClick={connectOrDisconnect}
           />
-          <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? 'Vista única' : splitMode === 2 ? 'Cuadrícula 4' : 'Dividir'} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
+          <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? text('Single view', 'Vista única') : splitMode === 2 ? text('4-pane grid', 'Cuadrícula 4') : text('Split', 'Dividir')} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <span className="toolbar-separator" aria-hidden="true" />
-          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? 'SFTP sólo para sesiones SSH' : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />
-          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? 'Editor remoto sólo para sesiones SSH' : 'Editor'} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />
+          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? text('SFTP is only available for SSH sessions', 'SFTP sólo para sesiones SSH') : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />
+          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? text('The remote editor is only available for SSH sessions', 'Editor remoto sólo para sesiones SSH') : text('Editor', 'Editor')} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />
           <div className="settings-wrapper">
-            <button className="icon-button" aria-label="Ajustes" title="Ajustes" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
+            <button className="icon-button" aria-label={text('Settings', 'Ajustes')} title={text('Settings', 'Ajustes')} aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
-              <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>Exportar conexiones</strong><small>Sin secretos ni claves privadas</small></span></button>
-              <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>Importar conexiones</strong><small>Desde un respaldo de Conexum</small></span></button>
+              <label className="settings-language"><Languages size={14} /><span><strong>{text('Language', 'Idioma')}</strong><small>{text('Interface language', 'Idioma de la interfaz')}</small></span><select value={language} onChange={(event) => setLanguage(event.target.value as 'en' | 'es')} aria-label={text('Language', 'Idioma')}><option value="en">English</option><option value="es">Español</option></select></label>
               <i />
-              <button disabled={!activeSession || activeSession.profile.kind === 'local'} onClick={() => void openDiagnostics()}><Stethoscope size={14} /><span><strong>Diagnóstico SSH</strong><small>{activeSession?.profile.kind === 'local' ? 'No aplica a la terminal local' : activeSession ? activeSession.profile.name : 'Abrí una sesión primero'}</small></span></button>
+              <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
+              <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
+              <i />
+              <button disabled={!activeSession || activeSession.profile.kind === 'local'} onClick={() => void openDiagnostics()}><Stethoscope size={14} /><span><strong>{text('SSH diagnostics', 'Diagnóstico SSH')}</strong><small>{activeSession?.profile.kind === 'local' ? text('Not available for the local terminal', 'No aplica a la terminal local') : activeSession ? activeSession.profile.name : text('Open a session first', 'Abrí una sesión primero')}</small></span></button>
               {settingsMessage && <p>{settingsMessage}</p>}
             </div>}
           </div>
@@ -985,44 +1021,44 @@ export function App() {
       <section className={`workspace ${sidebarOpen ? '' : 'sidebar-closed'}`} style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
         {sidebarOpen && (
           <aside className="sidebar">
-            <div className="sidebar-heading"><span>CONEXIONES</span><button className="icon-button subtle" onClick={() => setSidebarOpen(false)} aria-label="Ocultar conexiones"><PanelLeftClose size={17} /></button></div>
-            <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar conexiones…" /></label>
+            <div className="sidebar-heading"><span>{text('CONNECTIONS', 'CONEXIONES')}</span><button className="icon-button subtle" onClick={() => setSidebarOpen(false)} aria-label={text('Hide connections', 'Ocultar conexiones')}><PanelLeftClose size={17} /></button></div>
+            <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={text('Search connections…', 'Buscar conexiones…')} /></label>
             <div className="connection-tree">
               {showLocalProfile && <div className="connection-group local-group">
                 <button className="group-title" aria-expanded={!localGroupCollapsed} onClick={() => setLocalGroupCollapsed((current) => !current)}>
                   <ChevronDown size={13} className={`folder-chevron ${localGroupCollapsed ? 'collapsed' : ''}`} /><Monitor size={14} /><span>{localProfile.group}</span><small>1</small>
                 </button>
-                {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title="Doble clic para abrir una terminal de esta Mac">
+                {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title={text('Double-click to open a terminal on this Mac', 'Doble clic para abrir una terminal de esta Mac')}>
                   <SquareTerminal size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === LOCAL_PROFILE_ID && session.status === 'connected') ? 'online' : ''}`} /><span>{localProfile.name}</span>
                 </button>}
               </div>}
-              {groupedProfiles.length === 0 && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>Sin resultados</strong></div>}
+              {groupedProfiles.length === 0 && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>{text('No results', 'Sin resultados')}</strong></div>}
               {groupedProfiles.map(([group, connections]) => (
                 <div className="connection-group" key={group}>
-                  <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title="Clic derecho para renombrar o eliminar el grupo">
+                  <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title={text('Right-click to rename or delete the group', 'Clic derecho para renombrar o eliminar el grupo')}>
                     <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
                   </button>
                   {!collapsedGroups.has(group) && connections.map((connection) => (
-                    <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title="Doble clic para abrir otra sesión · Clic derecho para editar">
-                      <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label="Usa clave SSH" /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
+                    <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click to edit', 'Doble clic para abrir otra sesión · Clic derecho para editar')}>
+                      <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label={text('Uses an SSH key', 'Usa clave SSH')} /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
                     </button>
                   ))}
                 </div>
               ))}
             </div>
             <div className="sidebar-actions">
-              <button className="import-connections" onClick={importSshConfig} title="Importar SSH config" aria-label="Importar SSH config"><Import size={13} />Importar</button>
-              <button className="add-connection" onClick={openNewProfile} title="Agregar conexión SSH" aria-label="Agregar conexión SSH"><Plus size={13} />Agregar</button>
+              <button className="import-connections" onClick={importSshConfig} title={text('Import SSH config', 'Importar SSH config')} aria-label={text('Import SSH config', 'Importar SSH config')}><Import size={13} />{text('Import', 'Importar')}</button>
+              <button className="add-connection" onClick={openNewProfile} title={text('Add SSH connection', 'Agregar conexión SSH')} aria-label={text('Add SSH connection', 'Agregar conexión SSH')}><Plus size={13} />{text('Add', 'Agregar')}</button>
             </div>
           </aside>
         )}
 
-        {sidebarOpen && <button className="sidebar-resizer" aria-label="Cambiar ancho del panel de conexiones" onPointerDown={startSidebarResize} onDoubleClick={() => setSidebarWidth(270)} />}
+        {sidebarOpen && <button className="sidebar-resizer" aria-label={text('Resize connections panel', 'Cambiar ancho del panel de conexiones')} onPointerDown={startSidebarResize} onDoubleClick={() => setSidebarWidth(270)} />}
 
         <section className="main-area">
           <div className="tabs-row">
-            {!sidebarOpen && <button className="sidebar-reveal" onClick={() => setSidebarOpen(true)} aria-label="Mostrar conexiones"><PanelLeftOpen size={17} /></button>}
-            <button className={`session-tab home-tab ${mainView === 'home' ? 'active' : ''}`} onClick={() => { setMainView('home'); setActiveTool(null) }} aria-label="Inicio" title="Inicio"><Home size={15} /></button>
+            {!sidebarOpen && <button className="sidebar-reveal" onClick={() => setSidebarOpen(true)} aria-label={text('Show connections', 'Mostrar conexiones')}><PanelLeftOpen size={17} /></button>}
+            <button className={`session-tab home-tab ${mainView === 'home' ? 'active' : ''}`} onClick={() => { setMainView('home'); setActiveTool(null) }} aria-label={text('Home', 'Inicio')} title={text('Home', 'Inicio')}><Home size={15} /></button>
             <div className="session-tabs-scroll">
               {sessions.map((session) => {
                 const sameProfileSessions = sessions.filter((item) => item.profile.id === session.profile.id)
@@ -1038,7 +1074,7 @@ export function App() {
                     setActiveSessionId(session.id)
                     setSelectedId(session.profile.id)
                     setMainView('terminal')
-                  }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.kind === 'local' ? 'Terminal de esta Mac' : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · Doble clic para cerrar`}>
+                  }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
                     {session.profile.kind === 'local' ? <Monitor size={15} /> : <SquareTerminal size={15} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
                 )
@@ -1059,41 +1095,41 @@ export function App() {
                   <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
                   {(session.status === 'disconnected' || session.status === 'error') && (
                     <button className="terminal-reconnect" onClick={(event) => { event.stopPropagation(); void terminalRefs.current.get(session.id)?.connect(session.profile, { preserveHistory: true }) }}>
-                      <RefreshCw size={13} />Reconectar
+                      <RefreshCw size={13} />{text('Reconnect', 'Reconectar')}
                     </button>
                   )}
                 </div>
               })}
             </div>
-            {mainView === 'terminal' && activeTool === 'sftp' && <button className="utility-resizer" aria-label="Cambiar ancho del panel de herramientas" onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
+            {mainView === 'terminal' && activeTool === 'sftp' && <button className="utility-resizer" aria-label={text('Resize tools panel', 'Cambiar ancho del panel de herramientas')} onPointerDown={startUtilityResize} onDoubleClick={() => setUtilityPanelWidth(480)} />}
             {mainView === 'terminal' && activeTool === 'sftp' && activeSession && (
               <SftpPanel key={activeSession.id} sessionId={activeSession.id} profileName={activeSession.profile.name} initialDirectory={sftpStart?.sessionId === activeSession.id ? sftpStart.directory : directoryForSession(activeSession)} onClose={() => setActiveTool(null)} onOpenEditor={openEditor} />
             )}
             {editorPanels.length > 0 && <div className={`editor-dock ${mainView === 'terminal' && activeTool === 'editor' ? 'visible' : ''}`}>
               {editorPanels.map((panel) => <div key={panel.sessionId} className={`editor-dock-layer ${mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId ? 'visible' : ''}`}>
-                <Suspense fallback={<div className="editor-loading">Abriendo editor…</div>}><EditorPane sessionId={panel.sessionId} profileName={panel.profileName} request={panel.request} visible={mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId} connected={sessions.find((session) => session.id === panel.sessionId)?.status === 'connected'} onHide={() => setActiveTool(null)} onClose={closeEditor} onStateChange={updateEditorState} /></Suspense>
+                <Suspense fallback={<div className="editor-loading">{text('Opening editor…', 'Abriendo editor…')}</div>}><EditorPane sessionId={panel.sessionId} profileName={panel.profileName} request={panel.request} visible={mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId} connected={sessions.find((session) => session.id === panel.sessionId)?.status === 'connected'} onHide={() => setActiveTool(null)} onClose={closeEditor} onStateChange={updateEditorState} /></Suspense>
               </div>)}
             </div>}
-            {mainView === 'terminal' && activeTool === 'editor' && <button className="editor-resizer" aria-label="Cambiar tamaño del editor" onPointerDown={startEditorResize} onDoubleClick={() => { setEditorWidth(58); setEditorHeight(63) }} />}
+            {mainView === 'terminal' && activeTool === 'editor' && <button className="editor-resizer" aria-label={text('Resize editor', 'Cambiar tamaño del editor')} onPointerDown={startEditorResize} onDoubleClick={() => { setEditorWidth(58); setEditorHeight(63) }} />}
           </div>
 
           <footer className="statusbar">
             <div className="status-left">
               <span className={`status-dot ${activeSessionCount > 0 ? 'online' : ''}`} />
-              <span>{mainView === 'terminal' && activeSession ? statusLabels[activeSession.status] : activeSessionCount > 0 ? `${activeSessionCount} ${activeSessionCount === 1 ? 'sesión activa' : 'sesiones activas'}` : 'Sin conexión'}</span>
+              <span>{mainView === 'terminal' && activeSession ? statusLabels[activeSession.status] : activeSessionCount > 0 ? text(`${activeSessionCount} active ${activeSessionCount === 1 ? 'session' : 'sessions'}`, `${activeSessionCount} ${activeSessionCount === 1 ? 'sesión activa' : 'sesiones activas'}`) : text('Not connected', 'Sin conexión')}</span>
               <span className="divider" />
-              <span>{mainView === 'terminal' && activeSession ? activeSession.profile.kind === 'local' ? activeSession.profile.group : `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? selected.kind === 'local' ? selected.group : `${selected.username}@${selected.host}` : 'Seleccioná una conexión'}</span>
+              <span>{mainView === 'terminal' && activeSession ? activeSession.profile.kind === 'local' ? activeSession.profile.group : `${activeSession.profile.username}@${activeSession.profile.host}` : selected ? selected.kind === 'local' ? selected.group : `${selected.username}@${selected.host}` : text('Select a connection', 'Seleccioná una conexión')}</span>
               {mainView === 'terminal' && activeSession?.status === 'connected' && (
                 !activeDirectory && activeSession.profile.kind !== 'local'
-                  ? <button className="session-directory unavailable directory-help-trigger" title="Activar seguimiento de la carpeta remota (opcional)" onClick={() => setDirectoryHelp(activeSession.id)}>Ruta —</button>
-                  : <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? 'Directorio local no disponible'}>{activeDirectory ?? 'Ruta —'}</span>
+                  ? <button className="session-directory unavailable directory-help-trigger" title={text('Enable remote directory tracking (optional)', 'Activar seguimiento de la carpeta remota (opcional)')} onClick={() => setDirectoryHelp(activeSession.id)}>{text('Path —', 'Ruta —')}</button>
+                  : <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? text('Local directory unavailable', 'Directorio local no disponible')}>{activeDirectory ?? text('Path —', 'Ruta —')}</span>
               )}
             </div>
             <div className={`status-right ${telemetryStale ? 'stale' : ''}`}>
               {mainView === 'terminal' && activeSession?.status === 'connected' && activeSession.profile.kind !== 'local' && (
                 <>
-                  <span title="Uso aproximado de CPU del servidor">CPU {activeSession.telemetry?.cpuPercent ?? '—'}{activeSession.telemetry?.cpuPercent !== null && activeSession.telemetry?.cpuPercent !== undefined ? '%' : ''}</span>
-                  <span title="Uso aproximado de memoria del servidor">RAM {activeSession.telemetry?.memoryPercent ?? '—'}{activeSession.telemetry ? '%' : ''}</span>
+                  <span title={text('Approximate server CPU usage', 'Uso aproximado de CPU del servidor')}>CPU {activeSession.telemetry?.cpuPercent ?? '—'}{activeSession.telemetry?.cpuPercent !== null && activeSession.telemetry?.cpuPercent !== undefined ? '%' : ''}</span>
+                  <span title={text('Approximate server memory usage', 'Uso aproximado de memoria del servidor')}>RAM {activeSession.telemetry?.memoryPercent ?? '—'}{activeSession.telemetry ? '%' : ''}</span>
                 </>
               )}
             </div>
@@ -1105,15 +1141,15 @@ export function App() {
         if (!profile) return null
         return (
           <div className="server-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-            <button onClick={() => openSession(profile)}><Play size={14} />Abrir nueva sesión</button>
-            <button onClick={() => openProfileEditor(profile)}><Pencil size={14} />Editar configuración…</button>
+            <button onClick={() => openSession(profile)}><Play size={14} />{text('Open new session', 'Abrir nueva sesión')}</button>
+            <button onClick={() => openProfileEditor(profile)}><Pencil size={14} />{text('Edit settings…', 'Editar configuración…')}</button>
           </div>
         )
       })()}
       {contextMenu && contextMenu.kind === 'group' && (
         <div className="server-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button onClick={() => renameGroup(contextMenu.group)}><Pencil size={14} />Renombrar grupo…</button>
-          <button className="danger-item" onClick={() => deleteGroup(contextMenu.group)}><Trash2 size={14} />Eliminar grupo…</button>
+          <button onClick={() => renameGroup(contextMenu.group)}><Pencil size={14} />{text('Rename group…', 'Renombrar grupo…')}</button>
+          <button className="danger-item" onClick={() => deleteGroup(contextMenu.group)}><Trash2 size={14} />{text('Delete group…', 'Eliminar grupo…')}</button>
         </div>
       )}
       {modalOpen && <ConnectionModal

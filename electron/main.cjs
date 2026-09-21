@@ -100,32 +100,32 @@ function publishTransfer(job, update) {
 }
 
 function sessionContext(sessionId) {
-  if (!isValidSessionId(sessionId)) throw new Error('Identificador de sesión inválido.')
+  if (!isValidSessionId(sessionId)) throw new Error('Invalid session identifier.')
   const context = sessionConnections.get(sessionId)
-  if (!context || !sessions.has(sessionId)) throw new Error('La sesión SSH ya no está activa.')
+  if (!context || !sessions.has(sessionId)) throw new Error('The SSH session is no longer active.')
   return context
 }
 
 function validateLocalPath(localPath, mode) {
   if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || localPath.length > 4_096 || /[\r\n\0]/.test(localPath)) {
-    throw new Error('La ruta local no es válida.')
+    throw new Error('The local path is not valid.')
   }
   const grant = localFileGrants.get(localPath)
-  if (!grant || grant.mode !== mode || grant.expiresAt < Date.now()) throw new Error('Volvé a seleccionar el archivo local.')
-  if (mode === 'upload' && !fs.statSync(localPath).isFile()) throw new Error('El archivo local no es válido.')
-  if (mode === 'download' && !fs.existsSync(path.dirname(localPath))) throw new Error('La carpeta local no existe.')
+  if (!grant || grant.mode !== mode || grant.expiresAt < Date.now()) throw new Error('Select the local file again.')
+  if (mode === 'upload' && !fs.statSync(localPath).isFile()) throw new Error('The local file is not valid.')
+  if (mode === 'download' && !fs.existsSync(path.dirname(localPath))) throw new Error('The local folder does not exist.')
   return localPath
 }
 
 function validateRetryLocalPath(localPath, mode) {
   if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || localPath.length > 4_096 || /[\r\n\0]/.test(localPath)) {
-    throw new Error('La ruta local guardada ya no es válida.')
+    throw new Error('The saved local path is no longer valid.')
   }
   try {
     if (mode === 'upload' && !fs.statSync(localPath).isFile()) throw new Error('missing')
     if (mode === 'download' && !fs.statSync(path.dirname(localPath)).isDirectory()) throw new Error('missing')
   } catch {
-    throw new Error(mode === 'upload' ? 'El archivo local original ya no está disponible.' : 'La carpeta de descarga ya no está disponible.')
+    throw new Error(mode === 'upload' ? 'The original local file is no longer available.' : 'The download folder is no longer available.')
   }
   return localPath
 }
@@ -183,16 +183,16 @@ async function readRemoteText(context, remotePath) {
   const parent = path.posix.dirname(validatedPath)
   const listing = parseSftpListing(await runSftpBatch(context, buildListBatch(parent)), parent)
   const entry = listing.entries.find((candidate) => candidate.path === validatedPath)
-  if (!entry) throw new Error('El archivo remoto ya no existe.')
-  if (entry.type !== 'file') throw new Error('Por ahora el editor sólo puede abrir archivos regulares.')
-  if (entry.size > MAX_EDITOR_FILE_BYTES) throw new Error('El archivo supera el límite seguro de 2 MB para el editor.')
+  if (!entry) throw new Error('The remote file no longer exists.')
+  if (entry.type !== 'file') throw new Error('The editor can currently open regular files only.')
+  if (entry.size > MAX_EDITOR_FILE_BYTES) throw new Error('The file exceeds the editor’s safe 2 MB limit.')
 
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'conexum-edit-'))
   const temporaryFile = path.join(temporaryDirectory, 'remote-file')
   try {
     await runSftpBatch(context, buildReadFileBatch(validatedPath, temporaryFile))
     const content = fs.readFileSync(temporaryFile)
-    if (content.length > MAX_EDITOR_FILE_BYTES) throw new Error('El archivo supera el límite seguro de 2 MB para el editor.')
+    if (content.length > MAX_EDITOR_FILE_BYTES) throw new Error('The file exceeds the editor’s safe 2 MB limit.')
     const text = decodeEditorText(content)
     return {
       path: validatedPath,
@@ -211,10 +211,10 @@ async function readRemoteText(context, remotePath) {
 async function writeRemoteText(context, request) {
   const remotePath = validateRemotePath(request.remotePath)
   if (typeof request.content !== 'string' || Buffer.byteLength(request.content, 'utf8') > MAX_EDITOR_FILE_BYTES || request.content.includes('\0')) {
-    throw new Error('El contenido no es válido o supera el límite de 2 MB.')
+    throw new Error('The content is invalid or exceeds the 2 MB limit.')
   }
   if (typeof request.baselineFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(request.baselineFingerprint)) {
-    throw new Error('No se pudo verificar la versión original del archivo.')
+    throw new Error('Could not verify the original file version.')
   }
 
   const current = await readRemoteText(context, remotePath)
@@ -319,7 +319,7 @@ async function runTransfer(job) {
     process.onExit(({ exitCode }) => {
       if (finished) return
       if (canceled) finish('canceled')
-      else finish('error', exitCode === 0 ? 'La transferencia terminó antes de completarse.' : 'La transferencia SFTP falló.')
+      else finish('error', exitCode === 0 ? 'The transfer ended before completion.' : 'The SFTP transfer failed.')
     })
   })
 }
@@ -332,7 +332,7 @@ const transferQueue = new TransferQueue(async (job) => {
     publishTransfer(job, {
       progress: job.progress,
       status: 'error',
-      error: error instanceof Error ? error.message : 'No se pudo iniciar la transferencia.',
+      error: error instanceof Error ? error.message : 'Could not start the transfer.',
     })
   }
 })
@@ -443,7 +443,7 @@ function resolveSshAlias(alias, configFile) {
 function registerProfileHandlers() {
   ipcMain.handle('profiles:choose-identity', async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Seleccionar clave privada SSH',
+      title: 'Select SSH private key',
       defaultPath: path.join(os.homedir(), '.ssh'),
       properties: ['openFile', 'showHiddenFiles'],
     })
@@ -452,13 +452,13 @@ function registerProfileHandlers() {
 
   ipcMain.handle('profiles:import-config', async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Importar archivo de configuración SSH',
+      title: 'Import SSH configuration file',
       defaultPath: path.join(os.homedir(), '.ssh', 'config'),
       properties: ['openFile', 'showHiddenFiles'],
     })
     if (result.canceled) return []
 
-    const configFile = validateFilePath(result.filePaths[0], 'El archivo de configuración')
+    const configFile = validateFilePath(result.filePaths[0], 'The configuration file')
     const aliases = readHostAliases(fs.readFileSync(configFile, 'utf8'))
     return aliases.map((alias) => resolveSshAlias(alias, configFile))
   })
@@ -467,7 +467,7 @@ function registerProfileHandlers() {
     const backup = createBackup(profiles)
     const parent = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showSaveDialog(parent ?? undefined, {
-      title: 'Exportar conexiones de Conexum',
+      title: 'Export Conexum connections',
       defaultPath: path.join(os.homedir(), 'Documents', `conexum-conexiones-${new Date().toISOString().slice(0, 10)}.json`),
       filters: [{ name: 'Respaldo de Conexum', extensions: ['json'] }],
     })
@@ -487,20 +487,20 @@ function registerProfileHandlers() {
   ipcMain.handle('profiles:import-backup', async (event) => {
     const parent = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showOpenDialog(parent ?? undefined, {
-      title: 'Importar conexiones de Conexum',
+      title: 'Import Conexum connections',
       defaultPath: path.join(os.homedir(), 'Documents'),
       filters: [{ name: 'Respaldo de Conexum', extensions: ['json'] }],
       properties: ['openFile'],
     })
     if (result.canceled || !result.filePaths[0]) return []
-    const source = validateFilePath(result.filePaths[0], 'El archivo de respaldo')
+    const source = validateFilePath(result.filePaths[0], 'The backup file')
     const stats = fs.statSync(source)
-    if (!stats.isFile() || stats.size > 2_000_000) throw new Error('El respaldo es demasiado grande o no es un archivo válido.')
+    if (!stats.isFile() || stats.size > 2_000_000) throw new Error('The backup is too large or is not a valid file.')
     return parseBackup(fs.readFileSync(source, 'utf8'))
   })
 
   ipcMain.handle('profiles:forget-identity', (_event, filePath) => {
-    const identityFile = validateFilePath(String(filePath || ''), 'El archivo de identidad')
+    const identityFile = validateFilePath(String(filePath || ''), 'The identity file')
     execFileSync('/usr/bin/ssh-add', ['--apple-use-keychain', '-d', identityFile], {
       encoding: 'utf8',
       timeout: 10_000,
@@ -526,14 +526,14 @@ function registerSftpHandlers() {
       const parent = BrowserWindow.fromWebContents(event.sender)
       const options = {
         type: 'warning',
-        buttons: ['Eliminar', 'Cancelar'],
+        buttons: ['Delete', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        title: 'Confirmar eliminación remota',
-        message: `¿Eliminar ${path.posix.basename(validateRemotePath(sourcePath))}?`,
+        title: 'Confirm remote deletion',
+        message: `Delete ${path.posix.basename(validateRemotePath(sourcePath))}?`,
         detail: operation === 'remove-directory'
-          ? 'La carpeta sólo se eliminará si está vacía. Esta acción no se puede deshacer.'
-          : 'El archivo remoto se eliminará permanentemente. Esta acción no se puede deshacer.',
+          ? 'The folder will only be removed if it is empty. This action cannot be undone.'
+          : 'The remote file will be permanently deleted. This action cannot be undone.',
       }
       const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
       if (result.response !== 0) return false
@@ -543,7 +543,7 @@ function registerSftpHandlers() {
   })
 
   ipcMain.handle('sftp:choose-upload', async () => {
-    const result = await dialog.showOpenDialog({ title: 'Seleccionar archivo para subir', properties: ['openFile'] })
+    const result = await dialog.showOpenDialog({ title: 'Select file to upload', properties: ['openFile'] })
     if (result.canceled || !result.filePaths[0]) return null
     const localPath = result.filePaths[0]
     const stats = fs.statSync(localPath)
@@ -562,7 +562,7 @@ function registerSftpHandlers() {
 
   ipcMain.handle('sftp:choose-download', async (_event, suggestedName) => {
     const safeName = typeof suggestedName === 'string' ? path.basename(suggestedName).replace(/[\r\n\0]/g, '') : 'download'
-    const result = await dialog.showSaveDialog({ title: 'Guardar archivo remoto', defaultPath: path.join(os.homedir(), 'Downloads', safeName || 'download') })
+    const result = await dialog.showSaveDialog({ title: 'Save remote file', defaultPath: path.join(os.homedir(), 'Downloads', safeName || 'download') })
     if (result.canceled || !result.filePath) return null
     grantLocalPath(result.filePath, 'download')
     return result.filePath
@@ -578,7 +578,7 @@ function registerSftpHandlers() {
 
   ipcMain.handle('sftp:enqueue-transfer', (event, { sessionId, direction, localPath, remotePath, name } = {}) => {
     sessionContext(sessionId)
-    if (direction !== 'upload' && direction !== 'download') throw new Error('Dirección de transferencia inválida.')
+    if (direction !== 'upload' && direction !== 'download') throw new Error('Invalid transfer direction.')
     const validatedLocalPath = validateLocalPath(localPath, direction)
     const validatedRemotePath = validateRemotePath(remotePath)
     const safeName = typeof name === 'string' && name.length <= 512 && !/[\r\n\0]/.test(name) ? name : path.basename(direction === 'upload' ? validatedLocalPath : validatedRemotePath)
@@ -592,9 +592,9 @@ function registerSftpHandlers() {
   })
 
   ipcMain.handle('sftp:retry-transfer', (event, { transferId } = {}) => {
-    if (!isValidSessionId(transferId)) throw new Error('Transferencia inválida.')
+    if (!isValidSessionId(transferId)) throw new Error('Invalid transfer.')
     const source = transferRetrySources.get(transferId)
-    if (!source) throw new Error('Esta transferencia ya no se puede reintentar.')
+    if (!source) throw new Error('This transfer can no longer be retried.')
     sessionContext(source.sessionId)
     validateRetryLocalPath(source.localPath, source.direction)
     validateRemotePath(source.remotePath)
@@ -630,7 +630,7 @@ function registerSshHandlers() {
   ipcMain.handle('ssh:connect', (event, request) => {
     if (request?.profile?.kind === 'local') {
       const local = validateLocalConnection(request)
-      if (sessions.has(local.sessionId)) throw new Error('La sesión ya existe.')
+      if (sessions.has(local.sessionId)) throw new Error('The session already exists.')
       const sender = event.sender
       const shellProcess = pty.spawn('/bin/zsh', ['-l', '-i'], {
         name: 'xterm-256color',
@@ -651,7 +651,7 @@ function registerSshHandlers() {
     }
 
     const connection = validateConnection(request)
-    if (sessions.has(connection.sessionId)) throw new Error('La sesión ya existe.')
+    if (sessions.has(connection.sessionId)) throw new Error('The session already exists.')
     const sender = event.sender
 
     const cacheKey = connectionCacheKey(connection)
@@ -706,7 +706,7 @@ function registerSshHandlers() {
         endedAt: Date.now(),
         exitCode,
         signal: signal ?? null,
-        lastError: exitCode === 0 ? null : `OpenSSH finalizó con código ${exitCode}.`,
+        lastError: exitCode === 0 ? null : `OpenSSH exited with code ${exitCode}.`,
       })
       if (!sender.isDestroyed()) {
         sender.send('ssh:exit', {
@@ -759,19 +759,19 @@ function registerSshHandlers() {
     const item = sessionDiagnostics.get(sessionId)
     if (!item) return false
     clipboard.writeText([
-      'Conexum — Diagnóstico de conexión',
+      'Conexum — Connection diagnostics',
       `Estado: ${item.status}`,
       `Host: ${item.host}`,
-      `Puerto: ${item.port}`,
-      `Usuario: ${item.username}`,
+      `Port: ${item.port}`,
+      `Username: ${item.username}`,
       `IdentityFile: ${item.identityFile || 'No especificado'}`,
       `Alias SSH: ${item.sshAlias || 'No especificado'}`,
       `Config SSH: ${item.configFile || 'No especificado'}`,
       `PID: ${item.pid ?? '—'}`,
       `Inicio: ${item.startedAt ? new Date(item.startedAt).toISOString() : '—'}`,
       `Fin: ${item.endedAt ? new Date(item.endedAt).toISOString() : '—'}`,
-      `Código de salida: ${item.exitCode ?? '—'}`,
-      `Último error: ${item.lastError || 'Ninguno'}`,
+      `Exit code: ${item.exitCode ?? '—'}`,
+      `Last error: ${item.lastError || 'None'}`,
     ].join('\n'))
     return true
   })
@@ -847,14 +847,14 @@ function createWindow() {
     if (editorState.saving) {
       void dialog.showMessageBox(window, {
         type: 'info', buttons: ['Entendido'], title: 'Guardado en curso',
-        message: 'Esperá a que termine el guardado remoto antes de cerrar Conexum.',
+        message: 'Wait for the remote save to finish before closing Conexum.',
       }).finally(() => { closeDialogOpen = false })
       return
     }
     void dialog.showMessageBox(window, {
-      type: 'warning', buttons: ['Cerrar sin guardar', 'Cancelar'], defaultId: 1, cancelId: 1,
-      title: 'Cambios sin guardar', message: 'Hay archivos remotos con cambios sin guardar.',
-      detail: 'Si cerrás Conexum ahora, esos cambios locales se perderán.',
+      type: 'warning', buttons: ['Close without saving', 'Cancel'], defaultId: 1, cancelId: 1,
+      title: 'Unsaved changes', message: 'Some remote files have unsaved changes.',
+      detail: 'If you close Conexum now, those local changes will be lost.',
     }).then((result) => {
       if (result.response === 0) { allowClose = true; window.close() }
     }).finally(() => { closeDialogOpen = false })

@@ -52,7 +52,7 @@ function isValidSessionId(sessionId) {
 
 function validateControlPath(controlPath) {
   if (!isSafeText(controlPath, 512) || !path.isAbsolute(controlPath) || Buffer.byteLength(controlPath) > MAX_CONTROL_PATH_BYTES) {
-    throw new Error('Ruta de multiplexación inválida o demasiado larga.')
+    throw new Error('The multiplexing path is invalid or too long.')
   }
   return controlPath
 }
@@ -65,34 +65,34 @@ function expandHome(filePath, homeDirectory = os.homedir()) {
 }
 
 function validateFilePath(filePath, label) {
-  if (!isSafeText(filePath, 2048)) throw new Error(`${label} no es válido.`)
+  if (!isSafeText(filePath, 2048)) throw new Error(`${label} is not valid.`)
   const resolved = expandHome(filePath)
-  if (!path.isAbsolute(resolved) || !fs.existsSync(resolved)) throw new Error(`${label} no existe.`)
+  if (!path.isAbsolute(resolved) || !fs.existsSync(resolved)) throw new Error(`${label} does not exist.`)
   return resolved
 }
 
 function validateConnection(request) {
-  if (!request || typeof request !== 'object') throw new Error('Solicitud de conexión inválida.')
+  if (!request || typeof request !== 'object') throw new Error('Invalid connection request.')
 
   const { sessionId, profile, cols, rows } = request
-  if (!isValidSessionId(sessionId)) throw new Error('Identificador de sesión inválido.')
-  if (!profile || typeof profile !== 'object') throw new Error('Perfil SSH inválido.')
+  if (!isValidSessionId(sessionId)) throw new Error('Invalid session identifier.')
+  if (!profile || typeof profile !== 'object') throw new Error('Invalid SSH profile.')
 
   const host = String(profile.host || '').trim()
   const username = String(profile.username || '').trim()
   const port = Number(profile.port)
   const sshAlias = profile.sshAlias ? String(profile.sshAlias).trim() : ''
-  const configFile = profile.configFile ? validateFilePath(String(profile.configFile), 'El archivo de configuración') : ''
-  const identityFile = profile.identityFile ? validateFilePath(String(profile.identityFile), 'El archivo de identidad') : ''
+  const configFile = profile.configFile ? validateFilePath(String(profile.configFile), 'The configuration file') : ''
+  const identityFile = profile.identityFile ? validateFilePath(String(profile.identityFile), 'The identity file') : ''
 
-  if (!isSafeText(host) || host.startsWith('-') || /\s/.test(host)) throw new Error('El servidor no es válido.')
+  if (!isSafeText(host) || host.startsWith('-') || /\s/.test(host)) throw new Error('The host is not valid.')
   if (!isSafeText(username, 64) || username.startsWith('-') || !/^[a-zA-Z0-9._-]+$/.test(username)) {
-    throw new Error('El usuario SSH no es válido.')
+    throw new Error('The SSH username is not valid.')
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('El puerto SSH debe estar entre 1 y 65535.')
+    throw new Error('The SSH port must be between 1 and 65535.')
   }
-  if (sshAlias && (sshAlias.startsWith('-') || /\s/.test(sshAlias))) throw new Error('El alias SSH no es válido.')
+  if (sshAlias && (sshAlias.startsWith('-') || /\s/.test(sshAlias))) throw new Error('The SSH alias is not valid.')
 
   return {
     sessionId,
@@ -261,7 +261,7 @@ class SessionRegistry {
   }
 
   add(sessionId, process) {
-    if (this.sessions.has(sessionId)) throw new Error('La sesión ya existe.')
+    if (this.sessions.has(sessionId)) throw new Error('The session already exists.')
     this.sessions.set(sessionId, process)
   }
 

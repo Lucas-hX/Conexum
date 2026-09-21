@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { ClipboardCopy, X } from 'lucide-react'
+import { useI18n } from './i18n'
 
 type RemoteShell = 'bash' | 'zsh' | 'fish'
 
@@ -33,6 +34,7 @@ const startupFiles: Record<RemoteShell, string> = {
 export function ShellIntegrationHelp({ onClose }: {
   onClose(): void
 }) {
+  const { text } = useI18n()
   const [shell, setShell] = useState<RemoteShell>('bash')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'selected'>('idle')
   const codeRef = useRef<HTMLTextAreaElement>(null)
@@ -51,18 +53,18 @@ export function ShellIntegrationHelp({ onClose }: {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="shell-help-modal" role="dialog" aria-modal="true" aria-labelledby="shell-help-title">
-        <div className="modal-heading"><div><small>DIRECTORIO REMOTO</small><h2 id="shell-help-title">Sincronizar la carpeta actual</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X size={18} /></button></div>
+        <div className="modal-heading"><div><small>{text('REMOTE DIRECTORY', 'DIRECTORIO REMOTO')}</small><h2 id="shell-help-title">{text('Sync the current folder', 'Sincronizar la carpeta actual')}</h2></div><button className="icon-button" onClick={onClose} aria-label={text('Close', 'Cerrar')}><X size={18} /></button></div>
         <div className="shell-help-content">
-          <p>SFTP y Editor se abren en el home remoto cuando la terminal no informa una ruta. También podés escribir una ruta manualmente en ambos exploradores.</p>
-          <p>Si querés que al abrirlos sigan la carpeta de esta pestaña, pegá este bloque en el shell remoto. Para conservarlo en futuras sesiones, agregalo a <code>{startupFiles[shell]}</code>.</p>
-          <div className="shell-help-tabs" role="group" aria-label="Shell remoto">
+          <p>{text('SFTP and Editor open in the remote home directory when the terminal does not report a path. You can also enter a path manually in either browser.', 'SFTP y Editor se abren en el home remoto cuando la terminal no informa una ruta. También podés escribir una ruta manualmente en ambos exploradores.')}</p>
+          <p>{text('To make them follow this tab’s folder, paste this block into the remote shell. To keep it for future sessions, add it to ', 'Si querés que al abrirlos sigan la carpeta de esta pestaña, pegá este bloque en el shell remoto. Para conservarlo en futuras sesiones, agregalo a ')}<code>{startupFiles[shell]}</code>.</p>
+          <div className="shell-help-tabs" role="group" aria-label={text('Remote shell', 'Shell remoto')}>
             {(['bash', 'zsh', 'fish'] as const).map((name) => <button key={name} className={shell === name ? 'active' : ''} aria-pressed={shell === name} onClick={() => { setShell(name); setCopyState('idle') }}>{name}</button>)}
           </div>
-          <textarea ref={codeRef} readOnly value={snippets[shell]} aria-label={`Integración para ${shell}`} rows={shell === 'zsh' ? 5 : shell === 'bash' ? 4 : 3} onFocus={(event) => event.currentTarget.select()} />
-          <div className="shell-help-copy"><button className="secondary-button" onClick={() => void copySnippet()}><ClipboardCopy size={14} />{copyState === 'copied' ? 'Copiado' : 'Copiar bloque'}</button>{copyState === 'selected' && <span>Texto seleccionado: presioná ⌘C.</span>}</div>
-          <small>Cuando aparezca la ruta abajo, abrí SFTP o Editor de nuevo. Conexum nunca ejecuta este bloque por vos.</small>
+          <textarea ref={codeRef} readOnly value={snippets[shell]} aria-label={text(`Integration for ${shell}`, `Integración para ${shell}`)} rows={shell === 'zsh' ? 5 : shell === 'bash' ? 4 : 3} onFocus={(event) => event.currentTarget.select()} />
+          <div className="shell-help-copy"><button className="secondary-button" onClick={() => void copySnippet()}><ClipboardCopy size={14} />{copyState === 'copied' ? text('Copied', 'Copiado') : text('Copy block', 'Copiar bloque')}</button>{copyState === 'selected' && <span>{text('Text selected: press ⌘C.', 'Texto seleccionado: presioná ⌘C.')}</span>}</div>
+          <small>{text('When the path appears below, reopen SFTP or Editor. Conexum never runs this block for you.', 'Cuando aparezca la ruta abajo, abrí SFTP o Editor de nuevo. Conexum nunca ejecuta este bloque por vos.')}</small>
         </div>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>Cerrar</button></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose}>{text('Close', 'Cerrar')}</button></div>
       </section>
     </div>
   )

@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import type { SftpEntry, SftpTransferProgress } from './conexum'
+import { useI18n } from './i18n'
 
 type Props = {
   sessionId: string
@@ -55,21 +56,20 @@ function formatSize(size: number) {
   return `${(size / 1_073_741_824).toFixed(1)} GB`
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+':\s*/, '') : 'La operación SFTP no pudo completarse.'
-}
-
-const transferStatusLabel: Record<SftpTransferProgress['status'], string> = {
-  queued: 'en cola',
-  active: 'activo',
-  completed: 'listo',
-  canceled: 'cancelado',
-  error: 'error',
-}
-
 type SortKey = 'name' | 'size' | 'permissions' | 'owner' | 'modified'
 
 export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, onOpenEditor }: Props) {
+  const { text, error: localizeError } = useI18n()
+  const errorMessage = (error: unknown) => error instanceof Error
+    ? localizeError(error.message.replace(/^Error invoking remote method '[^']+':\s*/, ''))
+    : text('The SFTP operation could not be completed.', 'La operación SFTP no pudo completarse.')
+  const transferStatusLabel: Record<SftpTransferProgress['status'], string> = {
+    queued: text('queued', 'en cola'),
+    active: text('active', 'activo'),
+    completed: text('done', 'listo'),
+    canceled: text('canceled', 'cancelado'),
+    error: text('error', 'error'),
+  }
   const [directory, setDirectory] = useState(initialDirectory ?? '')
   const [pathDraft, setPathDraft] = useState(initialDirectory ?? '')
   const [entries, setEntries] = useState<SftpEntry[]>([])
@@ -185,7 +185,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
     const api = window.conexum?.sftp
     if (!api || !directory) return
     const remotePath = joinRemote(directory, file.name)
-    if (entries.some((entry) => entry.name === file.name) && !window.confirm(`Ya existe ${file.name}. ¿Sobrescribirlo?`)) return
+    if (entries.some((entry) => entry.name === file.name) && !window.confirm(text(`${file.name} already exists. Overwrite it?`, `Ya existe ${file.name}. ¿Sobrescribirlo?`))) return
     try {
       await api.enqueueTransfer({ sessionId, direction: 'upload', localPath: file.path, remotePath, name: file.name })
     } catch (uploadError) {
@@ -223,10 +223,10 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
   }
 
   const createFolder = async () => {
-    const name = window.prompt('Nombre de la carpeta nueva:')?.trim()
+    const name = window.prompt(text('New folder name:', 'Nombre de la carpeta nueva:'))?.trim()
     if (!name) return
     if (!validRemoteName(name)) {
-      setError('El nombre de la carpeta no es válido.')
+      setError(text('The folder name is not valid.', 'El nombre de la carpeta no es válido.'))
       return
     }
     try {
@@ -239,10 +239,10 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
 
   const renameSelected = async () => {
     if (!selected) return
-    const value = window.prompt('Nuevo nombre o ruta remota absoluta:', selected.name)?.trim()
+    const value = window.prompt(text('New name or absolute remote path:', 'Nuevo nombre o ruta remota absoluta:'), selected.name)?.trim()
     if (!value || value === selected.name || value === selected.path) return
     if (!value.startsWith('/') && !validRemoteName(value)) {
-      setError('El nombre o la ruta nueva no es válida.')
+      setError(text('The new name or path is not valid.', 'El nombre o la ruta nueva no es válida.'))
       return
     }
     try {
@@ -288,51 +288,51 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
     >
       <div className="panel-heading">
         <div><small>SFTP</small><strong>{profileName}</strong></div>
-        <button className="icon-button" onClick={onClose} aria-label="Cerrar explorador SFTP"><X size={17} /></button>
+        <button className="icon-button" onClick={onClose} aria-label={text('Close SFTP browser', 'Cerrar explorador SFTP')}><X size={17} /></button>
       </div>
 
       <form className={`sftp-pathbar ${editingPath ? 'editing' : ''}`} onSubmit={(event) => { event.preventDefault(); void loadDirectory(pathDraft.trim() || undefined) }}>
-        <button type="button" onClick={() => void loadDirectory()} disabled={loading} aria-label="Ir al home remoto" title="Home remoto"><Home size={14} /></button>
-        <button type="button" onClick={() => void loadDirectory(parentRemote(directory || '/'))} disabled={loading || directory === '/'} aria-label="Subir una carpeta"><ChevronUp size={15} /></button>
+        <button type="button" onClick={() => void loadDirectory()} disabled={loading} aria-label={text('Go to remote home', 'Ir al home remoto')} title={text('Remote home', 'Home remoto')}><Home size={14} /></button>
+        <button type="button" onClick={() => void loadDirectory(parentRemote(directory || '/'))} disabled={loading || directory === '/'} aria-label={text('Go up one folder', 'Subir una carpeta')}><ChevronUp size={15} /></button>
         {editingPath ? (
-          <input autoFocus value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setPathDraft(directory); setEditingPath(false) } }} aria-label="Ruta remota" placeholder="/ruta/absoluta" spellCheck={false} />
+          <input autoFocus value={pathDraft} onChange={(event) => setPathDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setPathDraft(directory); setEditingPath(false) } }} aria-label={text('Remote path', 'Ruta remota')} placeholder={text('/absolute/path', '/ruta/absoluta')} spellCheck={false} />
         ) : (
-          <div className="sftp-breadcrumbs" onDoubleClick={() => setEditingPath(true)} title="Doble clic para escribir una ruta">
+          <div className="sftp-breadcrumbs" onDoubleClick={() => setEditingPath(true)} title={text('Double-click to enter a path', 'Doble clic para escribir una ruta')}>
             {breadcrumbs.map((crumb, index) => <button key={crumb.path} type="button" onClick={() => void loadDirectory(crumb.path)}>{crumb.name}{index < breadcrumbs.length - 1 && <span>›</span>}</button>)}
           </div>
         )}
         {editingPath
-          ? <button type="submit" disabled={loading} aria-label="Ir a la ruta escrita" title="Ir a la ruta"><ArrowRight size={14} /></button>
-          : <button type="button" onClick={() => { setPathDraft(directory); setEditingPath(true) }} aria-label="Escribir ruta remota" title="Escribir ruta remota"><Pencil size={13} /></button>}
-        <button type="button" onClick={() => void loadDirectory(directory || undefined)} disabled={loading} aria-label="Actualizar"><RefreshCw size={14} /></button>
+          ? <button type="submit" disabled={loading} aria-label={text('Go to entered path', 'Ir a la ruta escrita')} title={text('Go to path', 'Ir a la ruta')}><ArrowRight size={14} /></button>
+          : <button type="button" onClick={() => { setPathDraft(directory); setEditingPath(true) }} aria-label={text('Enter remote path', 'Escribir ruta remota')} title={text('Enter remote path', 'Escribir ruta remota')}><Pencil size={13} /></button>}
+        <button type="button" onClick={() => void loadDirectory(directory || undefined)} disabled={loading} aria-label={text('Refresh', 'Actualizar')}><RefreshCw size={14} /></button>
       </form>
 
       <div className="sftp-actions">
-        <button onClick={() => void chooseUpload()}><ArrowUpFromLine size={14} />Subir</button>
-        <button onClick={() => void downloadSelected()} disabled={!selected || selected.type === 'directory'}><ArrowDownToLine size={14} />Bajar</button>
+        <button onClick={() => void chooseUpload()}><ArrowUpFromLine size={14} />{text('Upload', 'Subir')}</button>
+        <button onClick={() => void downloadSelected()} disabled={!selected || selected.type === 'directory'}><ArrowDownToLine size={14} />{text('Download', 'Bajar')}</button>
         <button onClick={() => void createFolder()}><FolderPlus size={14} /></button>
         <button onClick={() => void renameSelected()} disabled={!selected}><Pencil size={13} /></button>
         <button className="danger" onClick={() => void removeSelected()} disabled={!selected}><Trash2 size={13} /></button>
-        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined, selected?.type === 'directory' ? selected.path : directory)} disabled={loading || !directory} title="Abrir el editor integrado en esta carpeta"><Code2 size={14} />Editor</button>
+        <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined, selected?.type === 'directory' ? selected.path : directory)} disabled={loading || !directory} title={text('Open the integrated editor in this folder', 'Abrir el editor integrado en esta carpeta')}><Code2 size={14} />Editor</button>
         <span />
-        <button onClick={() => setShowHidden((current) => !current)} title={showHidden ? 'Ocultar archivos ocultos' : 'Mostrar archivos ocultos'}>{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+        <button onClick={() => setShowHidden((current) => !current)} title={showHidden ? text('Hide hidden files', 'Ocultar archivos ocultos') : text('Show hidden files', 'Mostrar archivos ocultos')}>{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div>
 
       {error && <div className="sftp-error"><span>{error}</span><button onClick={() => setError(null)}><X size={13} /></button></div>}
 
       <div className="sftp-table-heading" aria-hidden={loading}>
-        <button onClick={() => changeSort('name')}>Nombre <ArrowUpDown size={10} /></button>
-        <button onClick={() => changeSort('size')}>Tamaño</button>
-        <button onClick={() => changeSort('permissions')}>Permisos</button>
-        <button onClick={() => changeSort('owner')}>Propietario</button>
-        <button onClick={() => changeSort('modified')}>Modificado</button>
+        <button onClick={() => changeSort('name')}>{text('Name', 'Nombre')} <ArrowUpDown size={10} /></button>
+        <button onClick={() => changeSort('size')}>{text('Size', 'Tamaño')}</button>
+        <button onClick={() => changeSort('permissions')}>{text('Permissions', 'Permisos')}</button>
+        <button onClick={() => changeSort('owner')}>{text('Owner', 'Propietario')}</button>
+        <button onClick={() => changeSort('modified')}>{text('Modified', 'Modificado')}</button>
       </div>
 
       <div className="sftp-list" role="list" aria-busy={loading}>
         {loading ? (
-          <div className="sftp-empty"><LoaderCircle className="spin" size={20} /><span>Leyendo carpeta…</span></div>
+          <div className="sftp-empty"><LoaderCircle className="spin" size={20} /><span>{text('Reading folder…', 'Leyendo carpeta…')}</span></div>
         ) : visibleEntries.length === 0 ? (
-          <div className="sftp-empty"><Folder size={21} /><span>Carpeta vacía</span></div>
+          <div className="sftp-empty"><Folder size={21} /><span>{text('Empty folder', 'Carpeta vacía')}</span></div>
         ) : visibleEntries.map((entry) => (
           <button
             key={entry.path}
@@ -351,13 +351,13 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
         ))}
       </div>
 
-      {dragging && <div className="sftp-dropzone"><ArrowUpFromLine size={24} /><strong>Soltá para subir</strong><span>{directory}</span></div>}
+      {dragging && <div className="sftp-dropzone"><ArrowUpFromLine size={24} /><strong>{text('Drop to upload', 'Soltá para subir')}</strong><span>{directory}</span></div>}
 
       {transfers.length > 0 && (
         <div className={`transfer-queue ${transfersExpanded ? 'expanded' : 'collapsed'}`}>
           <button className="transfer-heading" onClick={() => setTransfersExpanded((current) => !current)} aria-expanded={transfersExpanded}>
-            <span><ChevronDown size={12} />TRANSFERENCIAS</span>
-            <small>{transfers.filter((item) => item.status === 'queued' || item.status === 'active').length} activas</small>
+            <span><ChevronDown size={12} />{text('TRANSFERS', 'TRANSFERENCIAS')}</span>
+            <small>{transfers.filter((item) => item.status === 'queued' || item.status === 'active').length} {text('active', 'activas')}</small>
           </button>
           {transfersExpanded && <div className="transfer-items">{transfers.map((transfer) => (
             <div className={`transfer-row ${transfer.status}`} key={transfer.transferId} title={transfer.error}>
@@ -366,9 +366,9 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
               <div className="transfer-progress"><i style={{ width: `${transfer.progress}%` }} /></div>
               <small>{transfer.status === 'active' ? `${transfer.progress}%` : transferStatusLabel[transfer.status]}</small>
               {(transfer.status === 'queued' || transfer.status === 'active') ? (
-                <button onClick={() => window.conexum?.sftp.cancelTransfer(transfer.transferId)} aria-label={`Cancelar ${transfer.name}`} title="Cancelar"><X size={11} /></button>
+                <button onClick={() => window.conexum?.sftp.cancelTransfer(transfer.transferId)} aria-label={text(`Cancel ${transfer.name}`, `Cancelar ${transfer.name}`)} title={text('Cancel', 'Cancelar')}><X size={11} /></button>
               ) : transfer.canRetry ? (
-                <button onClick={() => void retryTransfer(transfer)} aria-label={`Reintentar ${transfer.name}`} title="Reintentar"><RefreshCw size={11} /></button>
+                <button onClick={() => void retryTransfer(transfer)} aria-label={text(`Retry ${transfer.name}`, `Reintentar ${transfer.name}`)} title={text('Retry', 'Reintentar')}><RefreshCw size={11} /></button>
               ) : <span />}
             </div>
           ))}</div>}
