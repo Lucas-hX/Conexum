@@ -129,6 +129,28 @@ test('parses a real listing from the macOS OpenSSH SFTP client', {
   assert.ok(listing.entries.some((entry) => entry.name === 'package.json' && entry.type === 'file'))
 })
 
+test('downloads Markdown and Python text through the macOS SFTP client', {
+  skip: !fs.existsSync('/usr/bin/sftp') || !fs.existsSync('/usr/libexec/sftp-server'),
+}, () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'conexum-editor-read-test-'))
+  try {
+    for (const [name, content] of [['sample.md', '# Visible markdown\n'], ['sample.py', 'print("Visible Python")\n']]) {
+      const source = path.join(directory, name)
+      const destination = path.join(directory, `downloaded-${name}`)
+      fs.writeFileSync(source, content)
+      const result = spawnSync('/usr/bin/sftp', ['-N', '-b', '-', '-D', '/usr/libexec/sftp-server'], {
+        encoding: 'utf8',
+        input: buildReadFileBatch(source, destination),
+        timeout: 5_000,
+      })
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+      assert.equal(decodeEditorText(fs.readFileSync(destination)), content)
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true })
+  }
+})
+
 test('replaces an existing remote file through the macOS SFTP server', {
   skip: !fs.existsSync('/usr/bin/sftp') || !fs.existsSync('/usr/libexec/sftp-server'),
 }, () => {

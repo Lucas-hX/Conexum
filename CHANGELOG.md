@@ -2,6 +2,13 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.6.5 — 2026-09-20
+
+### Corregido
+
+- Los archivos de texto abiertos en Conexum Editor ya no aparecen en blanco: el área de edición ocupa el espacio disponible con o sin un aviso de error.
+- Se verificó la lectura de archivos Markdown y Python mediante el cliente SFTP de macOS y una prueba visual local del editor.
+
 ## 0.6.4 — 2026-09-20
 
 ### Mejorado
