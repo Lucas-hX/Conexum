@@ -11,7 +11,7 @@ const BRAND_ICON = './brand/conexum-icon.png'
 type EditorContext = {
   sessionId: string
   profileName: string
-  initialDirectory: string
+  initialDirectory: string | null
   initialPath?: string | null
 }
 
@@ -105,6 +105,7 @@ export function EditorApp() {
   const [error, setError] = useState<string | null>(null)
   const [treeKey, setTreeKey] = useState(0)
   const [treeSelectedPath, setTreeSelectedPath] = useState<string | null>(null)
+  const [rootDirectory, setRootDirectory] = useState<string | null>(null)
   const activeDocument = documents.find((document) => document.path === activePath) ?? null
   const dirty = documents.some((document) => document.draft !== document.content)
   const saving = documents.some((document) => document.saving)
@@ -131,11 +132,31 @@ export function EditorApp() {
 
   useEffect(() => {
     let removeOpenListener: (() => void) | undefined
+    const navigateDirectory = async (nextContext: EditorContext, directory: string | null) => {
+      if (directory) {
+        setRootDirectory(directory)
+        setTreeKey((current) => current + 1)
+        return
+      }
+      try {
+        const result = await window.conexum?.sftp.list(nextContext.sessionId)
+        if (result) {
+          setRootDirectory(result.directory)
+          setTreeKey((current) => current + 1)
+        }
+      } catch (directoryError) {
+        setError(errorMessage(directoryError))
+      }
+    }
     void window.conexum?.editor.getContext().then((nextContext) => {
       setContext(nextContext)
       document.title = `Conexum Editor — ${nextContext.profileName}`
+      void navigateDirectory(nextContext, nextContext.initialDirectory)
       if (nextContext.initialPath) void openFileAfterContext(nextContext, nextContext.initialPath)
-      removeOpenListener = window.conexum?.editor.onOpenFile(({ remotePath }) => void openFileAfterContext(nextContext, remotePath))
+      removeOpenListener = window.conexum?.editor.onOpenFile(({ remotePath, initialDirectory }) => {
+        void navigateDirectory(nextContext, initialDirectory)
+        if (remotePath) void openFileAfterContext(nextContext, remotePath)
+      })
     }).catch((contextError) => setError(errorMessage(contextError)))
     const openFileAfterContext = async (nextContext: EditorContext, remotePath: string) => {
       if (!window.conexum) return
@@ -223,7 +244,6 @@ export function EditorApp() {
   }
 
   const statusLanguage = activeDocument ? languageForPath(activeDocument.path) : 'Texto'
-  const rootDirectory = context?.initialDirectory || '/'
   const emptyMessage = useMemo(() => loadingPath ? `Abriendo ${baseName(loadingPath)}…` : 'Seleccioná un archivo del servidor para comenzar.', [loadingPath])
 
   return (
@@ -237,8 +257,8 @@ export function EditorApp() {
       </header>
       <section className="editor-workspace">
         <aside className="editor-explorer">
-          <div className="editor-explorer-heading"><span title={rootDirectory}>{rootDirectory}</span><button onClick={() => setTreeKey((current) => current + 1)} aria-label="Actualizar árbol"><RefreshCw size={13} /></button></div>
-          {context && <div className="editor-tree"><RemoteDirectory key={treeKey} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPath={treeSelectedPath} onSelect={setTreeSelectedPath} /></div>}
+          <div className="editor-explorer-heading"><span title={rootDirectory ?? (error ? 'Carpeta no disponible' : 'Cargando carpeta…')}>{rootDirectory ?? (error ? 'Carpeta no disponible' : 'Cargando carpeta…')}</span><button onClick={() => setTreeKey((current) => current + 1)} aria-label="Actualizar árbol"><RefreshCw size={13} /></button></div>
+          {context && rootDirectory && <div className="editor-tree"><RemoteDirectory key={`${rootDirectory}:${treeKey}`} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPath={treeSelectedPath} onSelect={setTreeSelectedPath} /></div>}
         </aside>
         <section className="editor-main">
           <div className="editor-tabs">
@@ -274,9 +294,9 @@ export function EditorApp() {
                     'editor.foreground': '#d7dfe7',
                     'editorLineNumber.foreground': '#53606b',
                     'editorLineNumber.activeForeground': '#9ba8b3',
-                    'editor.lineHighlightBackground': '#b47b4c12',
-                    'editor.selectionBackground': '#875a3c55',
-                    'editorCursor.foreground': '#c58a5d',
+                    'editor.lineHighlightBackground': '#348fce12',
+                    'editor.selectionBackground': '#2a83bd55',
+                    'editorCursor.foreground': '#79c7ff',
                     'editorIndentGuide.background1': '#26303a',
                     'editorIndentGuide.activeBackground1': '#4b5864',
                   },

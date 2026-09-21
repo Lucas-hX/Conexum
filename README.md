@@ -12,16 +12,18 @@
 
 ## Qué es Conexum
 
-Conexum es un gestor de conexiones SSH inspirado en la claridad de mRemoteNG y MobaXterm, diseñado específicamente para macOS. La terminal es siempre el espacio principal; el explorador SFTP, el editor remoto y las herramientas de observabilidad aparecerán únicamente cuando sean necesarias.
+Conexum es un gestor de conexiones SSH inspirado en la claridad de mRemoteNG y MobaXterm, diseñado específicamente para macOS. También permite abrir la terminal de esta Mac. La terminal es siempre el espacio principal; el explorador SFTP, el editor remoto y las herramientas de observabilidad aparecen únicamente cuando son necesarios.
 
 El proyecto evita reinventar protocolos sensibles: las conexiones, claves, agentes y validación de servidores se delegan en el OpenSSH incluido en macOS.
 
 ## Estado actual
 
 - Conexiones SSH reales mediante `/usr/bin/ssh` y `node-pty`.
+- Terminal local integrada mediante el shell de macOS, disponible de forma predeterminada en un grupo con el nombre de esta Mac.
 - Varias sesiones independientes en pestañas, incluso hacia el mismo servidor.
 - Vista dividida de dos terminales o cuadrícula de hasta cuatro sesiones abiertas.
-- Pantalla de Inicio con conexiones recientes y listado completo.
+- Pantalla de Inicio simplificada con acceso rápido a la terminal local y hasta tres conexiones SSH.
+- Barra de herramientas compacta con iconos y descripciones accesibles al pasar el cursor.
 - Perfiles organizados en carpetas contraídas de manera predeterminada.
 - Creación y edición visual de perfiles.
 - Importación de entradas desde un archivo SSH config.
@@ -120,7 +122,9 @@ Los perfiles permanecen en Application Support y no forman parte del bundle reem
 
 Este mecanismo está pensado para mantenedores y colaboradores durante la etapa alpha. El actualizador público futuro requerirá firma, notarización y releases versionadas.
 
-## Directorio y métricas remotas
+## Terminal local, directorio y métricas remotas
+
+El grupo con el nombre de esta Mac permite abrir tantas terminales locales independientes como necesites, sin crear un perfil SSH ni conectarte a `localhost`. Cada pestaña ejecuta `/bin/zsh` en una pseudo-terminal. Su directorio se consulta localmente a baja frecuencia, sin enviar comandos al shell ni registrar lo que escribís. El perfil local no se incluye en los respaldos SSH. SFTP, el editor remoto y el diagnóstico SSH se habilitan sólo para sesiones remotas.
 
 La barra inferior muestra el directorio actual de la pestaña cuando el shell remoto emite OSC 7. Consultá la [configuración opcional para Bash, Zsh y Fish](docs/shell-integration.md).
 
@@ -128,7 +132,7 @@ CPU y RAM se consultan aproximadamente cada 9 segundos únicamente para la pesta
 
 ## Explorador SFTP
 
-Con una sesión activa, presioná **SFTP** para abrir el panel lateral. El explorador comienza en el directorio informado por OSC 7 o, si todavía no existe esa información, en el home remoto.
+Con una sesión SSH activa, presioná el icono de carpeta **SFTP** para abrir el panel lateral. El explorador comienza en el directorio de esa pestaña informado por OSC 7. Si no hay ruta disponible, Conexum explica cómo activar la integración y te deja elegir si preferís abrir el home remoto.
 
 Desde el panel se puede:
 
@@ -158,7 +162,7 @@ Con una pestaña seleccionada, **Diagnóstico** muestra únicamente datos saniti
 
 ## Conexum Editor
 
-Con una sesión activa, presioná **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
+Con una sesión SSH activa, presioná el icono **Editor** o abrí un archivo desde SFTP para lanzar una ventana independiente. El árbol se abre en el directorio actual informado por OSC 7; si no hay ruta, Conexum te lo indica antes de abrir el home remoto. Al abrir un archivo desde SFTP, muestra la carpeta que lo contiene. El editor reutiliza la conexión multiplexada existente y no vuelve a solicitar credenciales.
 
 La primera versión incluye:
 
@@ -178,8 +182,8 @@ El editor depende de una sesión SSH activa. Si la sesión termina, el contenido
 ## Primer uso
 
 1. Ejecutá `pnpm run desktop`.
-2. Creá una conexión o importá tu archivo `~/.ssh/config`.
-3. Hacé doble clic sobre un servidor para abrir una sesión.
+2. Hacé doble clic en **Terminal local** para usar esta Mac, o creá/importá una conexión SSH.
+3. Hacé doble clic sobre un servidor para abrir una sesión SSH.
 4. Repetí el doble clic para abrir otra sesión independiente del mismo servidor.
 5. Hacé doble clic sobre una pestaña para cerrarla con confirmación.
 
@@ -199,6 +203,7 @@ Hacé clic derecho sobre el nombre de un grupo en la barra lateral para renombra
 - Toda comunicación privilegiada pasa por una API de preload pequeña y validada.
 - La telemetría usa un proceso SSH auxiliar en modo no interactivo y no puede solicitar credenciales.
 - El directorio remoto llega por OSC 7; Conexum no analiza la pantalla ni registra teclas.
+- El directorio local se consulta con `lsof` sobre el proceso del shell cada dos segundos mientras la pestaña local está visible.
 - SFTP funciona en un proceso separado con `BatchMode=yes`, sin reenviar puertos ni solicitar credenciales nuevas.
 - Eliminar contenido remoto siempre requiere confirmación y las carpetas sólo se eliminan cuando están vacías.
 - El editor comprueba conflictos antes de guardar y nunca guarda silenciosamente sobre una versión remota diferente.

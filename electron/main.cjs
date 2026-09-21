@@ -36,11 +36,13 @@ const {
   validateRemotePath,
 } = require('./sftp-core.cjs')
 const { createBackup, parseBackup } = require('./profile-core.cjs')
+const { machineInfo, parseLsofCwd, validateLocalConnection } = require('./local-core.cjs')
 
 app.setName('Conexum')
 
 const sessions = new SessionRegistry()
 const sessionConnections = new Map()
+const localSessions = new Map()
 const sessionDiagnostics = new Map()
 const editorWindows = new Map()
 const editorContexts = new Map()
@@ -626,6 +628,28 @@ function registerSftpHandlers() {
 
 function registerSshHandlers() {
   ipcMain.handle('ssh:connect', (event, request) => {
+    if (request?.profile?.kind === 'local') {
+      const local = validateLocalConnection(request)
+      if (sessions.has(local.sessionId)) throw new Error('La sesión ya existe.')
+      const sender = event.sender
+      const shellProcess = pty.spawn('/bin/zsh', ['-l', '-i'], {
+        name: 'xterm-256color',
+        cols: local.cols,
+        rows: local.rows,
+        cwd: os.homedir(),
+        env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'Conexum' },
+      })
+      sessions.add(local.sessionId, shellProcess)
+      localSessions.set(local.sessionId, { pid: shellProcess.pid })
+      shellProcess.onData((data) => sendToRenderer(sender, 'ssh:data', { sessionId: local.sessionId, data }))
+      shellProcess.onExit(({ exitCode, signal }) => {
+        sessions.remove(local.sessionId)
+        localSessions.delete(local.sessionId)
+        sendToRenderer(sender, 'ssh:exit', { sessionId: local.sessionId, exitCode, signal })
+      })
+      return { sessionId: local.sessionId, pid: shellProcess.pid }
+    }
+
     const connection = validateConnection(request)
     if (sessions.has(connection.sessionId)) throw new Error('La sesión ya existe.')
     const sender = event.sender
@@ -712,6 +736,7 @@ function registerSshHandlers() {
     if (!isValidSessionId(sessionId)) return
     cancelSessionTransfers(sessionId)
     sessionConnections.delete(sessionId)
+    localSessions.delete(sessionId)
     const diagnostic = sessionDiagnostics.get(sessionId)
     if (diagnostic) sessionDiagnostics.set(sessionId, { ...diagnostic, status: 'disconnected', endedAt: Date.now(), lastError: null })
     sessions.close(sessionId)
@@ -752,11 +777,31 @@ function registerSshHandlers() {
   })
 }
 
+function registerLocalHandlers() {
+  ipcMain.handle('local:machine-info', () => machineInfo(os.hostname(), os.userInfo().username, os.homedir()))
+
+  ipcMain.handle('local:current-directory', async (_event, { sessionId } = {}) => {
+    if (!isValidSessionId(sessionId) || !sessions.has(sessionId)) return null
+    const local = localSessions.get(sessionId)
+    if (!local) return null
+    try {
+      const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-a', '-p', String(local.pid), '-d', 'cwd', '-Fn'], {
+        timeout: 1_800,
+        maxBuffer: 16_384,
+      })
+      return parseLsofCwd(stdout)
+    } catch {
+      return null
+    }
+  })
+}
+
 function closeAllSessions() {
   transferQueue.clear()
   transferJobs.clear()
   transferRetrySources.clear()
   sessionConnections.clear()
+  localSessions.clear()
   sessionDiagnostics.clear()
   sessions.closeAll()
 }
@@ -871,12 +916,14 @@ function registerEditorWindowHandlers() {
       ? request.profileName
       : `${context.connection.username}@${context.connection.host}`
     const remotePath = request.remotePath ? validateRemotePath(request.remotePath) : null
-    const initialDirectory = validateRemotePath(request.initialDirectory || (remotePath ? path.posix.dirname(remotePath) : '/'))
+    const initialDirectory = request.initialDirectory
+      ? validateRemotePath(request.initialDirectory)
+      : remotePath ? path.posix.dirname(remotePath) : null
     const existing = editorWindows.get(request.sessionId)
     if (existing && !existing.isDestroyed()) {
       existing.show()
       existing.focus()
-      if (remotePath) sendToRenderer(existing.webContents, 'editor:open-file', { remotePath })
+      sendToRenderer(existing.webContents, 'editor:open-file', { remotePath, initialDirectory })
       return true
     }
     createEditorWindow(BrowserWindow.fromWebContents(event.sender), {
@@ -912,6 +959,7 @@ function registerEditorWindowHandlers() {
 }
 
 registerSshHandlers()
+registerLocalHandlers()
 registerProfileHandlers()
 registerSftpHandlers()
 registerEditorWindowHandlers()

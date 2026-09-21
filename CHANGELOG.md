@@ -2,6 +2,30 @@
 
 Todos los cambios relevantes de Conexum se documentan en este archivo.
 
+## 0.6.3 — 2026-09-20
+
+### Corregido
+
+- SFTP y Editor ya no abren silenciosamente el home remoto cuando la terminal aún no informa su directorio. Muestran cómo activar OSC 7 y ofrecen abrir el home sólo por elección explícita.
+- La ruta más reciente de cada pestaña se toma al pulsar SFTP o Editor, incluso si React todavía no actualizó la barra inferior.
+
+### Mejorado
+
+- Los acentos visuales de controles, selección, estado, editor y avisos usan únicamente tonos de azul.
+
+## 0.6.2 — 2026-09-20
+
+### Agregado
+
+- Grupo predeterminado con el nombre de la Mac y pestañas de terminal local independientes.
+- Directorio de la terminal local en la barra inferior, consultado sin modificar el shell.
+
+### Mejorado
+
+- Barra de herramientas con iconos discretos, botones de conexión más pequeños e Inicio simplificado.
+- SFTP y Editor abren el directorio actual de la pestaña SSH cuando está disponible mediante OSC 7; de lo contrario, utilizan el home remoto.
+- El editor actualiza el árbol al volver a abrirlo desde otra carpeta de la misma sesión.
+
 ## 0.5.3 — 2026-09-20
 
 ### Agregado

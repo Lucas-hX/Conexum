@@ -33,6 +33,9 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Explorador SFTP opcional con navegación y cola de transferencias.
 - Respaldo/importación segura de perfiles y diagnóstico sanitizado de sesiones.
 - Ventana independiente de edición remota con Monaco y árbol SFTP.
+- Terminal local predeterminada agrupada bajo el nombre de la Mac, con sesiones independientes.
+- Inicio y controles visuales compactos para reducir el ruido fuera de la terminal.
+- SFTP y editor abiertos en el directorio actual de la pestaña cuando OSC 7 está disponible; si no, muestran una guía y ofrecen abrir el home remoto de forma explícita.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 

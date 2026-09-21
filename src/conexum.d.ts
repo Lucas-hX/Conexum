@@ -1,5 +1,6 @@
 export type ConnectionProfile = {
   id: string
+  kind?: 'ssh' | 'local'
   name: string
   group: string
   host: string
@@ -89,6 +90,10 @@ declare global {
         onData(callback: (event: { sessionId: string; data: string }) => void): () => void
         onExit(callback: (event: { sessionId: string; exitCode: number; signal?: number }) => void): () => void
       }
+      local: {
+        getMachineInfo(): Promise<{ name: string; username: string; homeDirectory: string }>
+        getCurrentDirectory(sessionId: string): Promise<string | null>
+      }
       profiles: {
         chooseIdentityFile(): Promise<string | null>
         importSshConfig(): Promise<ConnectionProfile[]>
@@ -110,8 +115,8 @@ declare global {
         onFileSaved(callback: (event: { sessionId: string; remotePath: string }) => void): () => void
       }
       editor: {
-        openWindow(request: { sessionId: string; profileName: string; initialDirectory: string; remotePath?: string }): Promise<boolean>
-        getContext(): Promise<{ sessionId: string; profileName: string; initialDirectory: string; initialPath: string | null }>
+        openWindow(request: { sessionId: string; profileName: string; initialDirectory: string | null; remotePath?: string }): Promise<boolean>
+        getContext(): Promise<{ sessionId: string; profileName: string; initialDirectory: string | null; initialPath: string | null }>
         readText(sessionId: string, remotePath: string): Promise<RemoteTextFile>
         writeText(request: { sessionId: string; remotePath: string; content: string; baselineFingerprint: string }): Promise<
           | { conflict: true; current: { fingerprint: string; size: number; modified: string } }
@@ -119,7 +124,7 @@ declare global {
         >
         setState(state: { dirty: boolean; saving: boolean }): void
         closeWindow(state: { dirty: boolean; saving: boolean }): Promise<void>
-        onOpenFile(callback: (event: { remotePath: string }) => void): () => void
+        onOpenFile(callback: (event: { remotePath: string | null; initialDirectory: string | null }) => void): () => void
       }
     }
   }
