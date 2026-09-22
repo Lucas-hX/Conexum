@@ -27,6 +27,9 @@
           transfers: async () => [],
           onTransferProgress: () => () => {},
           onFileSaved: () => () => {},
+          chooseUploads: async () => [],
+          chooseDownloads: async () => [],
+          enqueueTransfer: async () => ({ transferId: 'fixture-transfer' }),
           list: async (_sessionId, directory) => ({
             directory: directory || '/home/demo',
             entries: [

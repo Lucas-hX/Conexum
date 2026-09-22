@@ -166,6 +166,7 @@ With an active SSH session, select **Editor** or open a file from SFTP. The edit
 The first version includes:
 
 - an on-demand remote SFTP tree;
+- multi-file selection with queued uploads and downloads, including individual progress for each file;
 - document tabs and Monaco syntax highlighting;
 - search, replace, line numbers, and standard editing shortcuts;
 - remote saving with `⌘S`;

@@ -105,8 +105,10 @@ declare global {
         list(sessionId: string, remotePath?: string): Promise<{ directory: string; entries: SftpEntry[] }>
         mutate(sessionId: string, operation: 'mkdir' | 'rename' | 'remove-file' | 'remove-directory', sourcePath: string, destinationPath?: string): Promise<boolean>
         chooseUpload(): Promise<{ path: string; name: string; size: number } | null>
+        chooseUploads(): Promise<Array<{ path: string; name: string; size: number }>>
         grantDroppedUpload(file: File): Promise<{ path: string; name: string; size: number } | null>
         chooseDownload(suggestedName: string): Promise<string | null>
+        chooseDownloads(remotePaths: string[]): Promise<Array<{ remotePath: string; localPath: string; name: string }>>
         transfers(sessionId: string): Promise<SftpTransferProgress[]>
         enqueueTransfer(request: { sessionId: string; direction: 'upload' | 'download'; localPath: string; remotePath: string; name: string }): Promise<{ transferId: string }>
         retryTransfer(transferId: string): Promise<{ transferId: string }>

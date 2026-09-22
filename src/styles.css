@@ -1742,7 +1742,7 @@ button {
 .editor-explorer {
   min-width: 0;
   display: grid;
-  grid-template-rows: 60px minmax(0, 1fr);
+  grid-template-rows: 60px auto minmax(0, 1fr) auto;
   border-right: 1px solid #28313a;
   background: #141a20;
 }
@@ -1769,6 +1769,11 @@ button {
 .editor-path-home { grid-column: 3; grid-row: 1; }
 .editor-path-refresh { grid-column: 4; grid-row: 1; }
 .editor-explorer-heading button:hover { color: #dce5ec; background: #ffffff0a; }
+.editor-transfer-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 5px; border-bottom: 1px solid #262f37; }
+.editor-transfer-actions button { min-width: 0; height: 28px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 6px; border: 1px solid #303c47; border-radius: 5px; color: #9cabb7; background: #192129; font-size: 9px; cursor: pointer; }
+.editor-transfer-actions button:hover:not(:disabled) { color: #e0edf6; border-color: #3d6682; background: #1c2b36; }
+.editor-transfer-actions button:disabled { opacity: .35; cursor: default; }
+.editor-transfer-actions button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-tree { min-height: 0; overflow: auto; padding: 7px 5px 12px; scrollbar-color: #38434d transparent; scrollbar-width: thin; }
 
 .editor-tree-row {
@@ -1792,8 +1797,18 @@ button {
 .editor-tree-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-tree-row.directory > svg:nth-child(2) { color: #78bbed; }
 .editor-tree-row.file > svg { color: #6b9fc8; }
+.editor-tree-row.file > .editor-selection-icon { color: #71818e; }
+.editor-tree-row.file.selected > .editor-selection-icon { color: #71c2fb; }
 .tree-loader { margin-left: auto; color: #697984; }
 .editor-tree-error { padding-top: 4px; padding-right: 8px; padding-bottom: 7px; color: #bd777c; font-size: 9px; line-height: 1.35; }
+
+.editor-transfer-list { max-height: 126px; overflow-y: auto; padding: 5px; border-top: 1px solid #28313a; background: #11171d; }
+.editor-transfer-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; margin-bottom: 3px; padding: 5px 6px 7px; overflow: hidden; border-radius: 4px; color: #8f9ca6; background: #192027; font-size: 9px; }
+.editor-transfer-item > span { min-width: 0; display: flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-transfer-item > strong { color: #7890a2; font-weight: 500; }
+.editor-transfer-item > i { position: absolute; bottom: 0; left: 0; height: 2px; background: #4ca5e5; transition: width .2s ease; }
+.editor-transfer-item.completed > i { width: 100% !important; background: #58b88b; }
+.editor-transfer-item.error > i, .editor-transfer-item.canceled > i { background: #b7646a; }
 
 .editor-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #0b1015; }
 .editor-tabs { min-width: 0; height: 38px; flex: none; display: flex; overflow-x: auto; border-bottom: 1px solid #28313a; background: #11171d; scrollbar-width: none; }

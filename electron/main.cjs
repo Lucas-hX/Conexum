@@ -552,6 +552,17 @@ function registerSftpHandlers() {
     return { path: localPath, name: path.basename(localPath), size: stats.size }
   })
 
+  ipcMain.handle('sftp:choose-uploads', async () => {
+    const result = await dialog.showOpenDialog({ title: 'Select files to upload', properties: ['openFile', 'multiSelections'] })
+    if (result.canceled) return []
+    return result.filePaths.slice(0, 500).flatMap((localPath) => {
+      const stats = fs.statSync(localPath)
+      if (!stats.isFile()) return []
+      grantLocalPath(localPath, 'upload')
+      return [{ path: localPath, name: path.basename(localPath), size: stats.size }]
+    })
+  })
+
   ipcMain.handle('sftp:grant-dropped-upload', (_event, localPath) => {
     if (typeof localPath !== 'string' || !path.isAbsolute(localPath) || /[\r\n\0]/.test(localPath)) return null
     const stats = fs.statSync(localPath)
@@ -566,6 +577,37 @@ function registerSftpHandlers() {
     if (result.canceled || !result.filePath) return null
     grantLocalPath(result.filePath, 'download')
     return result.filePath
+  })
+
+  ipcMain.handle('sftp:choose-downloads', async (_event, remotePaths) => {
+    if (!Array.isArray(remotePaths) || remotePaths.length === 0 || remotePaths.length > 500) throw new Error('Select between 1 and 500 files.')
+    const validated = remotePaths.map((value) => {
+      const remotePath = validateRemotePath(value)
+      const name = path.posix.basename(remotePath)
+      if (!name || name === '.' || name === '..') throw new Error('A selected file name is not valid.')
+      return { remotePath, name }
+    })
+    const result = await dialog.showOpenDialog({
+      title: 'Choose a folder for the downloaded files',
+      defaultPath: path.join(os.homedir(), 'Downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (result.canceled || !result.filePaths[0]) return []
+    const directory = result.filePaths[0]
+    const reserved = new Set()
+    return validated.map((file) => {
+      const extension = path.extname(file.name)
+      const stem = path.basename(file.name, extension) || 'download'
+      let candidate = file.name
+      let suffix = 2
+      while (reserved.has(candidate.toLowerCase()) || fs.existsSync(path.join(directory, candidate))) {
+        candidate = `${stem} (${suffix++})${extension}`
+      }
+      reserved.add(candidate.toLowerCase())
+      const localPath = path.join(directory, candidate)
+      grantLocalPath(localPath, 'download')
+      return { remotePath: file.remotePath, localPath, name: candidate }
+    })
   })
 
   ipcMain.handle('sftp:transfers', (_event, { sessionId } = {}) => {
