@@ -36,6 +36,11 @@
               { name: 'sample.md', path: '/home/demo/sample.md', type: 'file', size: 43, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
               { name: 'sample.py', path: '/home/demo/sample.py', type: 'file', size: 24, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
               { name: 'sample.error', path: '/home/demo/sample.error', type: 'file', size: 0, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false },
+              ...Array.from({ length: 40 }, (_, index) => ({
+                name: `scroll-test-${String(index + 1).padStart(2, '0')}.txt`,
+                path: `/home/demo/scroll-test-${String(index + 1).padStart(2, '0')}.txt`,
+                type: 'file', size: index + 1, permissions: '-rw-r--r--', owner: 'demo', modified: 'Jan 01 2026', hidden: false,
+              })),
             ],
           }),
         },

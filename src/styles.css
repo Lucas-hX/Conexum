@@ -1734,15 +1734,19 @@ button {
 .editor-close-button:focus-visible, .editor-tab button:focus-visible { outline: 2px solid #55aef0; outline-offset: -2px; }
 
 .editor-workspace {
+  min-width: 0;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(190px, 23%) minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .editor-explorer {
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-rows: 60px auto minmax(0, 1fr) auto;
+  overflow: hidden;
   border-right: 1px solid #28313a;
   background: #141a20;
 }
@@ -1774,7 +1778,7 @@ button {
 .editor-transfer-actions button:hover:not(:disabled) { color: #e0edf6; border-color: #3d6682; background: #1c2b36; }
 .editor-transfer-actions button:disabled { opacity: .35; cursor: default; }
 .editor-transfer-actions button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.editor-tree { min-height: 0; overflow: auto; padding: 7px 5px 12px; scrollbar-color: #38434d transparent; scrollbar-width: thin; }
+.editor-tree { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 7px 5px 12px; scrollbar-color: #38434d transparent; scrollbar-width: thin; }
 
 .editor-tree-row {
   width: 100%;
