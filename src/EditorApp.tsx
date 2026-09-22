@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
-import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, X } from 'lucide-react'
-import type { RemoteTextFile, SftpEntry } from './conexum'
+import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpFromLine, CheckSquare2, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, Square, X } from 'lucide-react'
+import type { RemoteTextFile, SftpEntry, SftpTransferProgress } from './conexum'
 import { useI18n } from './i18n'
 
 loader.config({ monaco })
@@ -47,14 +47,18 @@ function baseName(filePath: string) {
   return filePath.split('/').filter(Boolean).at(-1) ?? filePath
 }
 
-function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onOpenFile, selectedPath, onSelect }: {
+function joinRemote(directory: string, name: string) {
+  return `${directory === '/' ? '' : directory.replace(/\/+$/, '')}/${name}`
+}
+
+function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onOpenFile, selectedPaths, onToggleSelect }: {
   context: EditorContext
   directory: string
   depth: number
   initiallyOpen?: boolean
   onOpenFile(path: string): void
-  selectedPath?: string | null
-  onSelect?(path: string): void
+  selectedPaths: Set<string>
+  onToggleSelect(path: string): void
 }) {
   const { text, error: localizeError } = useI18n()
   const [open, setOpen] = useState(initiallyOpen)
@@ -97,10 +101,10 @@ function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onO
       </button>
       {open && loadError && <div className="editor-tree-error" style={{ paddingLeft: 30 + depth * 16 }}>{loadError}</div>}
       {open && entries.map((entry) => entry.type === 'directory' ? (
-        <RemoteDirectory key={entry.path} context={context} directory={entry.path} depth={depth + 1} onOpenFile={onOpenFile} selectedPath={selectedPath} onSelect={onSelect} />
+        <RemoteDirectory key={entry.path} context={context} directory={entry.path} depth={depth + 1} onOpenFile={onOpenFile} selectedPaths={selectedPaths} onToggleSelect={onToggleSelect} />
       ) : (
-        <button key={entry.path} className={`editor-tree-row file ${selectedPath === entry.path ? 'selected' : ''}`} style={{ paddingLeft: 29 + depth * 16 }} onDoubleClick={() => entry.type === 'file' && onOpenFile(entry.path)} onClick={() => onSelect?.(entry.path)} title={`${entry.path} · ${text('Double-click to open', 'Doble clic para abrir')}`}>
-          <File size={13} /><span>{entry.name}</span>
+        <button key={entry.path} className={`editor-tree-row file ${selectedPaths.has(entry.path) ? 'selected' : ''}`} style={{ paddingLeft: 29 + depth * 16 }} onDoubleClick={() => entry.type === 'file' && onOpenFile(entry.path)} onClick={() => onToggleSelect(entry.path)} aria-pressed={selectedPaths.has(entry.path)} title={`${entry.path} · ${text('Click to select; double-click to open', 'Clic para seleccionar; doble clic para abrir')}`}>
+          {selectedPaths.has(entry.path) ? <CheckSquare2 className="editor-selection-icon" size={13} /> : <Square className="editor-selection-icon" size={13} />}<File size={13} /><span>{entry.name}</span>
         </button>
       ))}
     </div>
@@ -116,7 +120,8 @@ export function EditorPane({ sessionId, profileName, request, visible, connected
   const [loadingPath, setLoadingPath] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [treeKey, setTreeKey] = useState(0)
-  const [treeSelectedPath, setTreeSelectedPath] = useState<string | null>(null)
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(() => new Set())
+  const [transfers, setTransfers] = useState<SftpTransferProgress[]>([])
   const [rootDirectory, setRootDirectory] = useState<string | null>(null)
   const [pathDraft, setPathDraft] = useState('')
   const navigationId = useRef(0)
@@ -161,11 +166,72 @@ export function EditorPane({ sessionId, profileName, request, visible, connected
       if (requestId !== navigationId.current) return
       setRootDirectory(result.directory)
       setPathDraft(result.directory)
+      setSelectedPaths(new Set())
       setTreeKey((current) => current + 1)
     } catch (directoryError) {
       if (requestId === navigationId.current) setError(localizeError(errorMessage(directoryError, text('The remote operation could not be completed.', 'No se pudo completar la operación remota.'))))
     }
   }, [])
+
+  useEffect(() => {
+    const api = window.conexum?.sftp
+    if (!api) return
+    let mounted = true
+    void api.transfers(sessionId).then((items) => { if (mounted) setTransfers(items) })
+    const removeListener = api.onTransferProgress((progress) => {
+      if (progress.sessionId !== sessionId) return
+      setTransfers((current) => {
+        const next = current.some((item) => item.transferId === progress.transferId)
+          ? current.map((item) => item.transferId === progress.transferId ? progress : item)
+          : [progress, ...current]
+        return next.sort((left, right) => right.updatedAt - left.updatedAt).slice(0, 6)
+      })
+      if (progress.status === 'completed' && progress.direction === 'upload') setTreeKey((current) => current + 1)
+    })
+    return () => { mounted = false; removeListener() }
+  }, [sessionId])
+
+  const toggleSelectedPath = useCallback((remotePath: string) => {
+    setSelectedPaths((current) => {
+      const next = new Set(current)
+      if (next.has(remotePath)) next.delete(remotePath)
+      else next.add(remotePath)
+      return next
+    })
+  }, [])
+
+  const uploadFiles = async () => {
+    const api = window.conexum?.sftp
+    if (!api || !rootDirectory || !connected) return
+    const files = await api.chooseUploads()
+    if (files.length === 0) return
+    setError(null)
+    try {
+      const existing = await api.list(sessionId, rootDirectory)
+      const conflicts = files.filter((file) => existing.entries.some((entry) => entry.name === file.name))
+      if (conflicts.length && !window.confirm(text(`${conflicts.length} selected file(s) already exist. Overwrite them?`, `${conflicts.length} archivo(s) seleccionado(s) ya existen. ¿Sobrescribirlos?`))) return
+      for (const file of files) {
+        await api.enqueueTransfer({ sessionId, direction: 'upload', localPath: file.path, remotePath: joinRemote(rootDirectory, file.name), name: file.name })
+      }
+    } catch (uploadError) {
+      setError(localizeError(errorMessage(uploadError, text('The upload could not be started.', 'No se pudo iniciar la subida.'))))
+    }
+  }
+
+  const downloadSelected = async () => {
+    const api = window.conexum?.sftp
+    if (!api || selectedPaths.size === 0 || !connected) return
+    setError(null)
+    try {
+      const destinations = await api.chooseDownloads([...selectedPaths])
+      for (const file of destinations) {
+        await api.enqueueTransfer({ sessionId, direction: 'download', localPath: file.localPath, remotePath: file.remotePath, name: file.name })
+      }
+      if (destinations.length) setSelectedPaths(new Set())
+    } catch (downloadError) {
+      setError(localizeError(errorMessage(downloadError, text('The download could not be started.', 'No se pudo iniciar la descarga.'))))
+    }
+  }
 
   useEffect(() => {
     void navigateDirectory(context, request.initialDirectory, true)
@@ -271,7 +337,18 @@ export function EditorPane({ sessionId, profileName, request, visible, connected
             <button className="editor-path-home" type="button" onClick={() => void navigateDirectory(context, null)} aria-label={text('Go to remote home', 'Ir al home remoto')} title={text('Remote home', 'Home remoto')}><Home size={13} /></button>
             <button className="editor-path-refresh" type="button" disabled={!rootDirectory} onClick={() => setTreeKey((current) => current + 1)} aria-label={text('Refresh tree', 'Actualizar árbol')} title={text('Refresh tree', 'Actualizar árbol')}><RefreshCw size={13} /></button>
           </form>
-          {rootDirectory && <div className="editor-tree"><RemoteDirectory key={`${rootDirectory}:${treeKey}`} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPath={treeSelectedPath} onSelect={setTreeSelectedPath} /></div>}
+          <div className="editor-transfer-actions">
+            <button type="button" disabled={!connected || !rootDirectory} onClick={() => void uploadFiles()} title={text('Upload multiple files to the open folder', 'Subir varios archivos a la carpeta abierta')}><ArrowUpFromLine size={13} /><span>{text('Upload files', 'Subir archivos')}</span></button>
+            <button type="button" disabled={!connected || selectedPaths.size === 0} onClick={() => void downloadSelected()} title={text('Download selected files', 'Descargar archivos seleccionados')}><ArrowDownToLine size={13} /><span>{text('Download', 'Descargar')}{selectedPaths.size ? ` (${selectedPaths.size})` : ''}</span></button>
+          </div>
+          {rootDirectory && <div className="editor-tree"><RemoteDirectory key={`${rootDirectory}:${treeKey}`} context={context} directory={rootDirectory} depth={0} initiallyOpen onOpenFile={(filePath) => void openFile(filePath)} selectedPaths={selectedPaths} onToggleSelect={toggleSelectedPath} /></div>}
+          {transfers.length > 0 && <div className="editor-transfer-list" aria-label={text('File transfers', 'Transferencias de archivos')}>
+            {transfers.slice(0, 4).map((transfer) => <div key={transfer.transferId} className={`editor-transfer-item ${transfer.status}`} title={transfer.error ?? transfer.name}>
+              <span>{transfer.direction === 'upload' ? <ArrowUpFromLine size={11} /> : <ArrowDownToLine size={11} />}{transfer.name}</span>
+              <strong>{transfer.status === 'active' ? `${transfer.progress}%` : text(transfer.status, transfer.status === 'queued' ? 'en cola' : transfer.status === 'completed' ? 'listo' : transfer.status === 'canceled' ? 'cancelado' : 'error')}</strong>
+              <i style={{ width: `${transfer.progress}%` }} />
+            </div>)}
+          </div>}
         </aside>
         <section className="editor-main">
           <div className="editor-tabs">
