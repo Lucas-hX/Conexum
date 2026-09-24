@@ -26,6 +26,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - A unified title bar with compact session tabs, connection controls, and accessible tool descriptions.
 - Profiles organized into groups that start collapsed.
 - Visual profile creation and editing.
+- Connection duplication from the right-click menu for quickly reusing a server with another username or configuration.
 - Import from an SSH config file.
 - Support for username, host, port, alias, and `IdentityFile`.
 - Integration with `ssh-agent` and macOS Keychain for passphrases.
@@ -44,6 +45,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Copyable connection diagnostics that never capture terminal content.
 - An integrated, resizable editor beside the terminal with an SFTP tree, Monaco, tabs, and safe remote saving.
 - English as the default interface language, with Spanish available from **Settings → Language**.
+- Coordinated built-in themes for the interface, terminal, and editor: Conexum Dark, Midnight Blue, and Graphite.
 
 Code signing and notarization, advanced editor features, and other improvements in the [roadmap](ROADMAP.md) are still pending.
 
@@ -159,6 +161,12 @@ The Settings menu can export and import Conexum connections. A backup includes n
 
 With a tab selected, **SSH diagnostics** shows only sanitized profile and OpenSSH process data: destination, port, username, IdentityFile, status, and exit code. **Copy diagnostics** never includes terminal content or keystrokes.
 
+## Themes and connection duplication
+
+Choose **Settings → Theme** to switch between **Conexum Dark**, **Midnight Blue**, and **Graphite**. The selection is saved locally and applies immediately to the application chrome, open terminals, and Conexum Editor without reconnecting a session.
+
+Right-click an SSH connection and choose **Duplicate…** to prepare a new profile with the same group, destination, port, username, and configured key path. The copy receives a new identifier and opens in the connection form so you can change its name, username, or other settings before saving. As with every Conexum profile, no password, passphrase, or private-key content is copied or stored.
+
 ## Conexum Editor
 
 With an active SSH session, select **Editor** or open a file from SFTP. The editor appears inside Conexum beside the terminal, and you can drag the divider to resize it. Its tree starts at the most recent path reported through OSC 7 or at the remote home directory. You can enter another absolute path and press Enter or the arrow button; Home returns to the remote user's home directory. Opening Editor from SFTP preserves the browsed folder, and opening a file shows its parent folder. The editor reuses the existing multiplexed connection and does not request credentials again.
@@ -193,7 +201,7 @@ With two or more sessions open, **Split** shows two terminals side by side. Sele
 
 Select the Conexum logo to return Home. When the connections sidebar is hidden, its title-bar button opens a temporary overlay without reducing the terminal width; use the pin button in the overlay to keep it open. Session hover previews show only connection metadata, status, current directory, and available CPU/RAM metrics—they never capture terminal content or keystrokes.
 
-Right-click a group name in the sidebar to rename or delete it. Deleting a group removes its saved profiles but does not interrupt sessions that are already open.
+Right-click a connection to open a new session, duplicate it, or edit its settings. Right-click a group name to rename or delete it. Deleting a group removes its saved profiles but does not interrupt sessions that are already open.
 
 ## Security
 

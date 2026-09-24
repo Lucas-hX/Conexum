@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ClipboardCopy,
   Columns2,
+  Copy,
   FileCode2,
   FileDown,
   FileUp,
@@ -22,6 +23,7 @@ import {
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
+  Palette,
   Pencil,
   Pin,
   Play,
@@ -39,11 +41,13 @@ import {
 } from 'lucide-react'
 import type { ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
 import { useI18n } from './i18n'
+import { themes, useTheme } from './theme'
 
 type ToolPanel = 'sftp' | 'editor' | null
 type SessionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 type MainView = 'home' | 'terminal'
 type SplitMode = 0 | 2 | 4
+type ProfileModalMode = 'create' | 'edit' | 'duplicate'
 type ContextMenuState =
   | { x: number; y: number; kind: 'profile'; profileId: string }
   | { x: number; y: number; kind: 'group'; group: string }
@@ -134,6 +138,7 @@ const TerminalView = forwardRef<TerminalHandle, {
   onIdentityNeeded(profile: ConnectionProfile): void
 }>(function TerminalView({ sessionId, onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
   const { text, error: localizeError } = useI18n()
+  const { theme } = useTheme()
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -151,14 +156,7 @@ const TerminalView = forwardRef<TerminalHandle, {
       fontSize: 14,
       lineHeight: 1.25,
       scrollback: 10_000,
-      theme: {
-        background: '#080d12',
-        foreground: '#d6dde7',
-        cursor: '#73c8ff',
-        selectionBackground: '#1c72c955',
-        black: '#111820', red: '#ff6b72', green: '#55e276', yellow: '#f3c969',
-        blue: '#53a9ff', magenta: '#c68cff', cyan: '#52d6de', white: '#d6dde7',
-      },
+      theme: theme.terminal,
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -214,6 +212,10 @@ const TerminalView = forwardRef<TerminalHandle, {
       fitRef.current = null
     }
   }, [onDirectoryChange, onIdentityNeeded, onStatusChange])
+
+  useEffect(() => {
+    if (terminalRef.current) terminalRef.current.options.theme = theme.terminal
+  }, [theme])
 
   useImperativeHandle(ref, () => ({
     async connect(profile, options = {}) {
@@ -328,7 +330,7 @@ function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect }: {
 
   return (
     <div className="welcome-home">
-      <section className="welcome-banner" style={{ backgroundImage: `linear-gradient(90deg, #0b1119 0%, #0b1119ec 42%, #0b111966 76%), url(${BRAND_BANNER})` }}>
+      <section className="welcome-banner" style={{ backgroundImage: `linear-gradient(90deg, var(--theme-welcomeSolid, #0b1119) 0%, var(--theme-welcomeFade, #0b1119ec) 42%, var(--theme-welcomeClear, #0b111966) 76%), url(${BRAND_BANNER})` }}>
         <div className="welcome-copy">
           <div className="welcome-brand"><img src={BRAND_ICON} alt="" /><span>Conexum</span></div>
           <p>{text('Local terminal and SSH connections, all in one place.', 'Terminal local y conexiones SSH, en un solo lugar.')}</p>
@@ -359,13 +361,15 @@ function WelcomeHome({ profiles, recentIds, selectedId, onSelect, onConnect }: {
   )
 }
 
-function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
+function ConnectionModal({ profile, mode, identityRequired, onClose, onSave }: {
   profile?: ConnectionProfile | null
+  mode: ProfileModalMode
   identityRequired?: boolean
   onClose(): void
   onSave(profile: ConnectionProfile): void
 }) {
   const { text } = useI18n()
+  const editing = mode === 'edit'
   const [name, setName] = useState(profile?.name ?? '')
   const [group, setGroup] = useState(profile?.group ?? text('My servers', 'Mis servidores'))
   const [host, setHost] = useState(profile?.host ?? '')
@@ -409,7 +413,7 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <form className="connection-modal" onSubmit={submit}>
         <div className="modal-heading">
-          <div><small>{profile ? text('EDIT PROFILE', 'EDITAR PERFIL') : text('NEW PROFILE', 'NUEVO PERFIL')}</small><h2>{text('SSH connection', 'Conexión SSH')}</h2></div>
+          <div><small>{mode === 'edit' ? text('EDIT PROFILE', 'EDITAR PERFIL') : mode === 'duplicate' ? text('DUPLICATE PROFILE', 'DUPLICAR PERFIL') : text('NEW PROFILE', 'NUEVO PERFIL')}</small><h2>{text('SSH connection', 'Conexión SSH')}</h2></div>
           <button type="button" className="icon-button" onClick={onClose} aria-label={text('Close', 'Cerrar')}><X size={18} /></button>
         </div>
         {identityRequired && <div className="identity-warning"><strong>{text('OpenSSH could not find a valid key', 'OpenSSH no encontró una clave válida')}</strong><span>{text('Select the matching IdentityFile and save the profile to reconnect.', 'Seleccioná el IdentityFile correspondiente y guardá el perfil para volver a conectar.')}</span></div>}
@@ -425,10 +429,10 @@ function ConnectionModal({ profile, identityRequired, onClose, onSave }: {
           <ShieldCheck size={18} /><div><strong>{text('Protected by OpenSSH and Keychain', 'Protegido por OpenSSH y Keychain')}</strong>
           <span>{text('Conexum stores only the path. OpenSSH can remember the key passphrase through ssh-agent and macOS Keychain.', 'Conexum guarda solamente la ruta. OpenSSH puede recordar la passphrase de la clave mediante ssh-agent y el llavero de macOS.')}</span></div>
         </div>
-        {profile && identityFile && <div className="keychain-actions"><button type="button" onClick={forgetPassphrase}>{text('Forget saved passphrase', 'Olvidar passphrase guardada')}</button>{keychainMessage && <span>{keychainMessage}</span>}</div>}
+        {editing && profile && identityFile && <div className="keychain-actions"><button type="button" onClick={forgetPassphrase}>{text('Forget saved passphrase', 'Olvidar passphrase guardada')}</button>{keychainMessage && <span>{keychainMessage}</span>}</div>}
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>{text('Cancel', 'Cancelar')}</button>
-          <button type="submit" className="primary-button">{profile ? text('Save changes', 'Guardar cambios') : text('Save connection', 'Guardar conexión')}</button>
+          <button type="submit" className="primary-button">{mode === 'edit' ? text('Save changes', 'Guardar cambios') : mode === 'duplicate' ? text('Save duplicate', 'Guardar duplicado') : text('Save connection', 'Guardar conexión')}</button>
         </div>
       </form>
     </div>
@@ -465,6 +469,7 @@ function DiagnosticsModal({ diagnostics, onClose }: { diagnostics: SshDiagnostic
 
 export function App() {
   const { language, setLanguage, text, error: localizeError } = useI18n()
+  const { themeId, setThemeId } = useTheme()
   const statusLabels: Record<SessionStatus, string> = {
     idle: text('Not connected', 'Sin conexión'),
     connecting: text('Connecting…', 'Conectando…'),
@@ -501,6 +506,7 @@ export function App() {
   const [query, setQuery] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState<ConnectionProfile | null>(null)
+  const [profileModalMode, setProfileModalMode] = useState<ProfileModalMode>('create')
   const [identityRequiredProfileId, setIdentityRequiredProfileId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -709,6 +715,7 @@ export function App() {
 
   const openNewProfile = () => {
     setEditingProfile(null)
+    setProfileModalMode('create')
     setIdentityRequiredProfileId(null)
     setModalOpen(true)
   }
@@ -716,7 +723,20 @@ export function App() {
   const openProfileEditor = (profile: ConnectionProfile, identityRequired = false) => {
     setSelectedId(profile.id)
     setEditingProfile(profile)
+    setProfileModalMode('edit')
     setIdentityRequiredProfileId(identityRequired ? profile.id : null)
+    setModalOpen(true)
+    setContextMenu(null)
+  }
+
+  const duplicateProfile = (profile: ConnectionProfile) => {
+    setEditingProfile({
+      ...profile,
+      id: crypto.randomUUID(),
+      name: text(`${profile.name} copy`, `${profile.name} copia`),
+    })
+    setProfileModalMode('duplicate')
+    setIdentityRequiredProfileId(null)
     setModalOpen(true)
     setContextMenu(null)
   }
@@ -724,6 +744,7 @@ export function App() {
   const handleIdentityNeeded = useCallback((profile: ConnectionProfile) => {
     setSelectedId(profile.id)
     setEditingProfile(profile)
+    setProfileModalMode('edit')
     setIdentityRequiredProfileId(profile.id)
     setModalOpen(true)
   }, [])
@@ -761,6 +782,7 @@ export function App() {
     setSessions((current) => current.map((session) => session.profile.id === profile.id ? { ...session, profile } : session))
     setSelectedId(profile.id)
     setEditingProfile(null)
+    setProfileModalMode('create')
     setIdentityRequiredProfileId(null)
     setModalOpen(false)
   }
@@ -1085,7 +1107,7 @@ export function App() {
               <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
             </button>
             {!collapsedGroups.has(group) && connections.map((connection) => (
-              <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click to edit', 'Doble clic para abrir otra sesión · Clic derecho para editar')}>
+              <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click for actions', 'Doble clic para abrir otra sesión · Clic derecho para ver acciones')}>
                 <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label={text('Uses an SSH key', 'Usa clave SSH')} /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
               </button>
             ))}
@@ -1157,6 +1179,7 @@ export function App() {
             <button className="icon-button" aria-label={text('Settings', 'Ajustes')} title={text('Settings', 'Ajustes')} aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
               <label className="settings-language"><Languages size={14} /><span><strong>{text('Language', 'Idioma')}</strong><small>{text('Interface language', 'Idioma de la interfaz')}</small></span><select value={language} onChange={(event) => setLanguage(event.target.value as 'en' | 'es')} aria-label={text('Language', 'Idioma')}><option value="en">English</option><option value="es">Español</option></select></label>
+              <label className="settings-theme"><Palette size={14} /><span><strong>{text('Theme', 'Tema')}</strong><small>{text('App, terminal, and editor', 'Aplicación, terminal y editor')}</small></span><select value={themeId} onChange={(event) => setThemeId(event.target.value as keyof typeof themes)} aria-label={text('Theme', 'Tema')}><option value="conexum-dark">Conexum Dark</option><option value="midnight-blue">Midnight Blue</option><option value="graphite">Graphite</option></select></label>
               <i />
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
@@ -1241,6 +1264,7 @@ export function App() {
         return (
           <div className="server-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
             <button onClick={() => openSession(profile)}><Play size={14} />{text('Open new session', 'Abrir nueva sesión')}</button>
+            <button onClick={() => duplicateProfile(profile)}><Copy size={14} />{text('Duplicate…', 'Duplicar…')}</button>
             <button onClick={() => openProfileEditor(profile)}><Pencil size={14} />{text('Edit settings…', 'Editar configuración…')}</button>
           </div>
         )
@@ -1253,8 +1277,9 @@ export function App() {
       )}
       {modalOpen && <ConnectionModal
         profile={editingProfile}
+        mode={profileModalMode}
         identityRequired={Boolean(editingProfile && identityRequiredProfileId === editingProfile.id)}
-        onClose={() => { setModalOpen(false); setEditingProfile(null); setIdentityRequiredProfileId(null) }}
+        onClose={() => { setModalOpen(false); setEditingProfile(null); setProfileModalMode('create'); setIdentityRequiredProfileId(null) }}
         onSave={saveProfile}
       />}
       {diagnostics && <DiagnosticsModal diagnostics={diagnostics} onClose={() => setDiagnostics(null)} />}

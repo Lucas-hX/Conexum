@@ -36,6 +36,8 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Terminal local predeterminada agrupada bajo el nombre de la Mac, con sesiones independientes.
 - Inicio y controles visuales compactos para reducir el ruido fuera de la terminal.
 - Encabezado unificado con pestañas compactas, menú de desborde y panel de conexiones superpuesto cuando está oculto.
+- Temas integrados y persistentes para interfaz, terminal y editor: Conexum Dark, Midnight Blue y Graphite.
+- Duplicación contextual de perfiles SSH para reutilizar rápidamente un servidor con otro usuario o configuración.
 - SFTP y Editor abiertos en la última ruta informada por la pestaña cuando OSC 7 está disponible; si no, comienzan directamente en el home remoto y permiten cambiar de ruta manualmente.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores

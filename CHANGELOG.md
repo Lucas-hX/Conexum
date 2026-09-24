@@ -8,6 +8,8 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 
 - English is now the default interface language, with Spanish available from **Settings → Language** and the preference saved locally.
 - The README, shell-integration guide, native dialogs, validation messages, Editor, SFTP browser, and terminal status messages now use English by default.
+- Built-in Conexum Dark, Midnight Blue, and Graphite themes apply live to the application, terminal, and editor and persist locally.
+- SSH connections can be duplicated from their context menu into a new editable profile without copying or storing credentials.
 
 ## 0.6.6 — 2026-09-20
 
