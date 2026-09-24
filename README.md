@@ -185,7 +185,7 @@ The editor requires an active SSH session. If the session ends, open content rem
 2. Double-click **Local terminal** to use this Mac, or create/import an SSH connection.
 3. Double-click a server to open an SSH session.
 4. Double-click it again to open another independent session to the same server.
-5. Hover a session tab for a safe status preview, or use its close button to end it with confirmation.
+5. Hover a session tab for a safe status preview; use its close button or double-click the tab to end it with confirmation.
 
 If a connection ends, use **Reconnect** in the terminal or toolbar. Conexum keeps the tab's visible history and opens a new SSH session with the same profile.
 

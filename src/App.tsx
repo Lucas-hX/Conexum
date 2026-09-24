@@ -1118,7 +1118,7 @@ export function App() {
               const active = mainView === 'terminal' && activeSessionId === session.id
               return (
                 <div key={session.id} data-session-id={session.id} className={`session-tab ${active ? 'active' : ''}`} onMouseEnter={(event) => scheduleSessionPreview(event, session.id)} onMouseLeave={hideSessionPreview}>
-                  <button className="session-tab-main" role="tab" aria-selected={active} onClick={() => activateSession(session)} title={session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`}>
+                  <button className="session-tab-main" role="tab" aria-selected={active} onClick={() => activateSession(session)} onDoubleClick={(event) => { event.stopPropagation(); hideSessionPreview(); closeSessionTab(session) }} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
                     {session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
                   <button className="session-tab-close" onClick={() => { hideSessionPreview(); closeSessionTab(session) }} aria-label={text(`Close ${session.profile.name}`, `Cerrar ${session.profile.name}`)} title={text('Close session', 'Cerrar sesión')}><X size={12} /></button>
