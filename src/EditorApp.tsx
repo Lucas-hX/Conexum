@@ -4,6 +4,7 @@ import * as monaco from 'monaco-editor'
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpFromLine, CheckSquare2, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, Square, X } from 'lucide-react'
 import type { RemoteTextFile, SftpEntry, SftpTransferProgress } from './conexum'
 import { useI18n } from './i18n'
+import { useTheme } from './theme'
 
 loader.config({ monaco })
 
@@ -113,6 +114,7 @@ function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onO
 
 export function EditorPane({ sessionId, profileName, request, visible, connected, onHide, onClose, onStateChange }: EditorPaneProps) {
   const { text, error: localizeError } = useI18n()
+  const { theme } = useTheme()
   const context = useMemo(() => ({ sessionId }), [sessionId])
   const [documents, setDocuments] = useState<DocumentTab[]>([])
   const documentsRef = useRef<DocumentTab[]>([])
@@ -129,6 +131,11 @@ export function EditorPane({ sessionId, profileName, request, visible, connected
   const dirty = documents.some((document) => document.draft !== document.content)
   const saving = documents.some((document) => document.saving)
   documentsRef.current = documents
+
+  useEffect(() => {
+    monaco.editor.defineTheme(theme.id, { ...theme.editor, inherit: true })
+    monaco.editor.setTheme(theme.id)
+  }, [theme])
 
   const openFile = useCallback(async (remotePath: string) => {
     if (!window.conexum) return
@@ -368,29 +375,8 @@ export function EditorPane({ sessionId, profileName, request, visible, connected
                 path={activeDocument.path}
                 language={languageForPath(activeDocument.path)}
                 value={activeDocument.draft}
-                theme="conexum-dark"
-                beforeMount={(instance) => instance.editor.defineTheme('conexum-dark', {
-                  base: 'vs-dark',
-                  inherit: true,
-                  rules: [
-                    { token: 'comment', foreground: '697783' },
-                    { token: 'keyword', foreground: 'C990C0' },
-                    { token: 'string', foreground: 'D9A568' },
-                    { token: 'number', foreground: '7BC7B1' },
-                    { token: 'type', foreground: '63B3ED' },
-                  ],
-                  colors: {
-                    'editor.background': '#0b1015',
-                    'editor.foreground': '#d7dfe7',
-                    'editorLineNumber.foreground': '#53606b',
-                    'editorLineNumber.activeForeground': '#9ba8b3',
-                    'editor.lineHighlightBackground': '#348fce12',
-                    'editor.selectionBackground': '#2a83bd55',
-                    'editorCursor.foreground': '#79c7ff',
-                    'editorIndentGuide.background1': '#26303a',
-                    'editorIndentGuide.activeBackground1': '#4b5864',
-                  },
-                })}
+                theme={theme.id}
+                beforeMount={(instance) => instance.editor.defineTheme(theme.id, { ...theme.editor, inherit: true })}
                 onChange={(value) => setDocuments((current) => current.map((document) => document.path === activeDocument.path ? { ...document, draft: value ?? '' } : document))}
                 options={{
                   automaticLayout: true,
