@@ -15,7 +15,6 @@ import {
   Folder,
   FolderOpen,
   Languages,
-  Home,
   Import,
   KeyRound,
   LayoutGrid,
@@ -24,6 +23,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  Pin,
   Play,
   Plus,
   RefreshCw,
@@ -81,6 +81,7 @@ const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
 const EditorPane = lazy(() => import('./EditorApp'))
 type EditorPanel = { sessionId: string; profileName: string; request: EditorRequest }
 type EditorState = { dirty: boolean; saving: boolean }
+type SessionPreview = { sessionId: string; left: number; top: number }
 
 function parseOsc7Directory(value: string) {
   if (!value || value.length > 4_096 || /[\r\n\0]/.test(value)) return null
@@ -482,6 +483,7 @@ export function App() {
   const [mainView, setMainView] = useState<MainView>('home')
   const [recentIds, setRecentIds] = useState<string[]>(loadRecentConnections)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOverlayOpen, setSidebarOverlayOpen] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
     return Number.isFinite(stored) ? Math.min(Math.max(stored, 180), 420) : 270
@@ -507,8 +509,14 @@ export function App() {
   const [sessions, setSessions] = useState<SshSessionTab[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [splitMode, setSplitMode] = useState<SplitMode>(0)
+  const [tabsOverflowing, setTabsOverflowing] = useState(false)
+  const [tabsMenuOpen, setTabsMenuOpen] = useState(false)
+  const [sessionPreview, setSessionPreview] = useState<SessionPreview | null>(null)
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map())
   const latestDirectories = useRef<Map<string, string>>(new Map())
+  const sessionTabsRef = useRef<HTMLDivElement>(null)
+  const tabsMenuRef = useRef<HTMLDivElement>(null)
+  const previewTimerRef = useRef<number | null>(null)
 
   const selected = selectedId === LOCAL_PROFILE_ID ? localProfile : profiles.find((profile) => profile.id === selectedId) ?? null
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
@@ -664,6 +672,41 @@ export function App() {
     if (splitMode && sessions.length < 2) setSplitMode(0)
   }, [sessions.length, splitMode])
 
+  useEffect(() => {
+    const tabs = sessionTabsRef.current
+    if (!tabs) return
+    const update = () => setTabsOverflowing(tabs.scrollWidth > tabs.clientWidth + 2)
+    const observer = new ResizeObserver(update)
+    observer.observe(tabs)
+    const frame = window.requestAnimationFrame(update)
+    return () => { observer.disconnect(); window.cancelAnimationFrame(frame) }
+  }, [sessions.length])
+
+  useEffect(() => {
+    if (mainView !== 'terminal' || !activeSessionId) return
+    const frame = window.requestAnimationFrame(() => {
+      sessionTabsRef.current?.querySelector<HTMLElement>(`[data-session-id="${activeSessionId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeSessionId, mainView, sessions.length])
+
+  useEffect(() => {
+    if (!tabsMenuOpen) return
+    const close = (event: PointerEvent) => {
+      if (!tabsMenuRef.current?.contains(event.target as Node)) setTabsMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [tabsMenuOpen])
+
+  useEffect(() => {
+    if (!tabsOverflowing) setTabsMenuOpen(false)
+  }, [tabsOverflowing])
+
+  useEffect(() => () => {
+    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current)
+  }, [])
+
   const openNewProfile = () => {
     setEditingProfile(null)
     setIdentityRequiredProfileId(null)
@@ -736,7 +779,42 @@ export function App() {
     setSelectedId(profile.id)
     setMainView('terminal')
     setActiveTool(null)
+    setSidebarOverlayOpen(false)
     setRecentIds((current) => [profile.id, ...current.filter((id) => id !== profile.id)].slice(0, 8))
+  }
+
+  const showHome = () => {
+    setMainView('home')
+    setActiveTool(null)
+    setTabsMenuOpen(false)
+  }
+
+  const activateSession = (session: SshSessionTab) => {
+    if (activeTool === 'editor' && activeSessionId !== session.id) setActiveTool(editorPanels.some((panel) => panel.sessionId === session.id) ? 'editor' : null)
+    if (activeTool === 'sftp' && activeSessionId !== session.id) {
+      const directory = latestDirectories.current.get(session.id) ?? session.currentDirectory
+      if (directory && session.profile.kind !== 'local') setSftpStart({ sessionId: session.id, directory })
+      else setActiveTool(null)
+    }
+    setActiveSessionId(session.id)
+    setSelectedId(session.profile.id)
+    setMainView('terminal')
+    setTabsMenuOpen(false)
+    setSessionPreview(null)
+  }
+
+  const scheduleSessionPreview = (event: React.MouseEvent, sessionId: string) => {
+    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current)
+    const bounds = event.currentTarget.getBoundingClientRect()
+    previewTimerRef.current = window.setTimeout(() => {
+      setSessionPreview({ sessionId, left: Math.max(12, Math.min(bounds.left, window.innerWidth - 282)), top: bounds.bottom + 8 })
+    }, 450)
+  }
+
+  const hideSessionPreview = () => {
+    if (previewTimerRef.current !== null) window.clearTimeout(previewTimerRef.current)
+    previewTimerRef.current = null
+    setSessionPreview(null)
   }
 
   const connectOrDisconnect = () => {
@@ -981,15 +1059,87 @@ export function App() {
     window.addEventListener('pointerup', stop)
   }
 
+  const connectionsSidebar = (overlay = false) => (
+    <aside className={`sidebar ${overlay ? 'sidebar-overlay' : ''}`} aria-label={text('Connections', 'Conexiones')}>
+      <div className="sidebar-heading">
+        <span>{text('CONNECTIONS', 'CONEXIONES')}</span>
+        <div className="sidebar-heading-actions">
+          {overlay && <button className="icon-button subtle" onClick={() => { setSidebarOpen(true); setSidebarOverlayOpen(false) }} aria-label={text('Keep connections panel open', 'Mantener abierto el panel de conexiones')} title={text('Keep panel open', 'Mantener panel abierto')}><Pin size={15} /></button>}
+          <button className="icon-button subtle" onClick={() => overlay ? setSidebarOverlayOpen(false) : setSidebarOpen(false)} aria-label={text('Hide connections', 'Ocultar conexiones')}><PanelLeftClose size={17} /></button>
+        </div>
+      </div>
+      <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={text('Search connections…', 'Buscar conexiones…')} /></label>
+      <div className="connection-tree">
+        {showLocalProfile && <div className="connection-group local-group">
+          <button className="group-title" aria-expanded={!localGroupCollapsed} onClick={() => setLocalGroupCollapsed((current) => !current)}>
+            <ChevronDown size={13} className={`folder-chevron ${localGroupCollapsed ? 'collapsed' : ''}`} /><Monitor size={14} /><span>{localProfile.group}</span><small>1</small>
+          </button>
+          {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title={text('Double-click to open a terminal on this Mac', 'Doble clic para abrir una terminal de esta Mac')}>
+            <SquareTerminal size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === LOCAL_PROFILE_ID && session.status === 'connected') ? 'online' : ''}`} /><span>{localProfile.name}</span>
+          </button>}
+        </div>}
+        {groupedProfiles.length === 0 && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>{text('No results', 'Sin resultados')}</strong></div>}
+        {groupedProfiles.map(([group, connections]) => (
+          <div className="connection-group" key={group}>
+            <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title={text('Right-click to rename or delete the group', 'Clic derecho para renombrar o eliminar el grupo')}>
+              <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
+            </button>
+            {!collapsedGroups.has(group) && connections.map((connection) => (
+              <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click to edit', 'Doble clic para abrir otra sesión · Clic derecho para editar')}>
+                <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label={text('Uses an SSH key', 'Usa clave SSH')} /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="sidebar-actions">
+        <button className="import-connections" onClick={importSshConfig} title={text('Import SSH config', 'Importar SSH config')} aria-label={text('Import SSH config', 'Importar SSH config')}><Import size={13} />{text('Import', 'Importar')}</button>
+        <button className="add-connection" onClick={openNewProfile} title={text('Add SSH connection', 'Agregar conexión SSH')} aria-label={text('Add SSH connection', 'Agregar conexión SSH')}><Plus size={13} />{text('Add', 'Agregar')}</button>
+      </div>
+    </aside>
+  )
+
   const activeDirectory = activeSession?.currentDirectory
     ? compactDirectory(activeSession.currentDirectory, activeSession.profile.username)
     : null
   const telemetryStale = Boolean(activeSession?.telemetry && Date.now() - activeSession.telemetry.updatedAt > 25_000)
+  const previewedSession = sessionPreview ? sessions.find((session) => session.id === sessionPreview.sessionId) ?? null : null
 
   return (
     <main className="app-shell">
       <header className="titlebar">
-        <div className="brand"><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></div>
+        <button className={`brand ${mainView === 'home' ? 'active' : ''}`} onClick={showHome} aria-label={text('Home', 'Inicio')} title={text('Home', 'Inicio')}><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></button>
+        <button className={`header-sidebar-toggle ${sidebarOpen || sidebarOverlayOpen ? 'active' : ''}`} onClick={() => sidebarOpen ? setSidebarOpen(false) : setSidebarOverlayOpen((current) => !current)} aria-label={sidebarOpen || sidebarOverlayOpen ? text('Hide connections', 'Ocultar conexiones') : text('Show connections', 'Mostrar conexiones')} title={text('Connections', 'Conexiones')}>{sidebarOpen || sidebarOverlayOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}</button>
+        <div className="session-tabs-region">
+          <div className="session-tabs-scroll" ref={sessionTabsRef} role="tablist" aria-label={text('Open sessions', 'Sesiones abiertas')}>
+            {sessions.map((session) => {
+              const sameProfileSessions = sessions.filter((item) => item.profile.id === session.profile.id)
+              const ordinal = sameProfileSessions.findIndex((item) => item.id === session.id) + 1
+              const active = mainView === 'terminal' && activeSessionId === session.id
+              return (
+                <div key={session.id} data-session-id={session.id} className={`session-tab ${active ? 'active' : ''}`} onMouseEnter={(event) => scheduleSessionPreview(event, session.id)} onMouseLeave={hideSessionPreview}>
+                  <button className="session-tab-main" role="tab" aria-selected={active} onClick={() => activateSession(session)} title={session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`}>
+                    {session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
+                  </button>
+                  <button className="session-tab-close" onClick={() => { hideSessionPreview(); closeSessionTab(session) }} aria-label={text(`Close ${session.profile.name}`, `Cerrar ${session.profile.name}`)} title={text('Close session', 'Cerrar sesión')}><X size={12} /></button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        {tabsOverflowing && <div className="tabs-overflow" ref={tabsMenuRef}>
+          <button className={`tabs-overflow-trigger ${tabsMenuOpen ? 'active' : ''}`} onClick={() => setTabsMenuOpen((current) => !current)} aria-expanded={tabsMenuOpen} aria-label={text('Show all sessions', 'Mostrar todas las sesiones')} title={text('All sessions', 'Todas las sesiones')}><MoreHorizontal size={16} /></button>
+          {tabsMenuOpen && <div className="tabs-overflow-menu">
+            {sessions.map((session) => {
+              const matches = sessions.filter((item) => item.profile.id === session.profile.id)
+              const ordinal = matches.findIndex((item) => item.id === session.id) + 1
+              return <div key={session.id} className={mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}>
+                <button onClick={() => activateSession(session)}>{session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span>{session.profile.name}{matches.length > 1 ? ` #${ordinal}` : ''}</span><i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} /></button>
+                <button className="overflow-close" onClick={() => closeSessionTab(session)} aria-label={text(`Close ${session.profile.name}`, `Cerrar ${session.profile.name}`)}><X size={12} /></button>
+              </div>
+            })}
+          </div>}
+        </div>}
         <nav className="toolbar" aria-label={text('Main tools', 'Herramientas principales')}>
           <ToolButton icon={<Plus size={16} />} label={text('New connection', 'Nueva conexión')} onClick={openNewProfile} />
           <ToolButton
@@ -1018,71 +1168,20 @@ export function App() {
         </nav>
       </header>
 
+      {previewedSession && sessionPreview && <div className="session-preview-card" style={{ left: sessionPreview.left, top: sessionPreview.top }}>
+        <div><span className={`status-dot ${previewedSession.status === 'connected' ? 'online' : ''}`} /><strong>{previewedSession.profile.name}</strong><small>{statusLabels[previewedSession.status]}</small></div>
+        <p>{previewedSession.profile.kind === 'local' ? previewedSession.profile.group : `${previewedSession.profile.username}@${previewedSession.profile.host}:${previewedSession.profile.port}`}</p>
+        <footer><span>{previewedSession.currentDirectory ? compactDirectory(previewedSession.currentDirectory, previewedSession.profile.username) : text('Path unavailable', 'Ruta no disponible')}</span>{previewedSession.telemetry && <b>CPU {previewedSession.telemetry.cpuPercent ?? '—'}% · RAM {previewedSession.telemetry.memoryPercent}%</b>}</footer>
+      </div>}
+
       <section className={`workspace ${sidebarOpen ? '' : 'sidebar-closed'}`} style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
-        {sidebarOpen && (
-          <aside className="sidebar">
-            <div className="sidebar-heading"><span>{text('CONNECTIONS', 'CONEXIONES')}</span><button className="icon-button subtle" onClick={() => setSidebarOpen(false)} aria-label={text('Hide connections', 'Ocultar conexiones')}><PanelLeftClose size={17} /></button></div>
-            <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={text('Search connections…', 'Buscar conexiones…')} /></label>
-            <div className="connection-tree">
-              {showLocalProfile && <div className="connection-group local-group">
-                <button className="group-title" aria-expanded={!localGroupCollapsed} onClick={() => setLocalGroupCollapsed((current) => !current)}>
-                  <ChevronDown size={13} className={`folder-chevron ${localGroupCollapsed ? 'collapsed' : ''}`} /><Monitor size={14} /><span>{localProfile.group}</span><small>1</small>
-                </button>
-                {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title={text('Double-click to open a terminal on this Mac', 'Doble clic para abrir una terminal de esta Mac')}>
-                  <SquareTerminal size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === LOCAL_PROFILE_ID && session.status === 'connected') ? 'online' : ''}`} /><span>{localProfile.name}</span>
-                </button>}
-              </div>}
-              {groupedProfiles.length === 0 && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>{text('No results', 'Sin resultados')}</strong></div>}
-              {groupedProfiles.map(([group, connections]) => (
-                <div className="connection-group" key={group}>
-                  <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title={text('Right-click to rename or delete the group', 'Clic derecho para renombrar o eliminar el grupo')}>
-                    <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
-                  </button>
-                  {!collapsedGroups.has(group) && connections.map((connection) => (
-                    <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click to edit', 'Doble clic para abrir otra sesión · Clic derecho para editar')}>
-                      <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label={text('Uses an SSH key', 'Usa clave SSH')} /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </div>
-            <div className="sidebar-actions">
-              <button className="import-connections" onClick={importSshConfig} title={text('Import SSH config', 'Importar SSH config')} aria-label={text('Import SSH config', 'Importar SSH config')}><Import size={13} />{text('Import', 'Importar')}</button>
-              <button className="add-connection" onClick={openNewProfile} title={text('Add SSH connection', 'Agregar conexión SSH')} aria-label={text('Add SSH connection', 'Agregar conexión SSH')}><Plus size={13} />{text('Add', 'Agregar')}</button>
-            </div>
-          </aside>
-        )}
+        {sidebarOpen && connectionsSidebar()}
+        {!sidebarOpen && sidebarOverlayOpen && <button className="sidebar-overlay-scrim" onClick={() => setSidebarOverlayOpen(false)} aria-label={text('Close connections panel', 'Cerrar panel de conexiones')} />}
+        {!sidebarOpen && sidebarOverlayOpen && connectionsSidebar(true)}
 
         {sidebarOpen && <button className="sidebar-resizer" aria-label={text('Resize connections panel', 'Cambiar ancho del panel de conexiones')} onPointerDown={startSidebarResize} onDoubleClick={() => setSidebarWidth(270)} />}
 
         <section className="main-area">
-          <div className="tabs-row">
-            {!sidebarOpen && <button className="sidebar-reveal" onClick={() => setSidebarOpen(true)} aria-label={text('Show connections', 'Mostrar conexiones')}><PanelLeftOpen size={17} /></button>}
-            <button className={`session-tab home-tab ${mainView === 'home' ? 'active' : ''}`} onClick={() => { setMainView('home'); setActiveTool(null) }} aria-label={text('Home', 'Inicio')} title={text('Home', 'Inicio')}><Home size={15} /></button>
-            <div className="session-tabs-scroll">
-              {sessions.map((session) => {
-                const sameProfileSessions = sessions.filter((item) => item.profile.id === session.profile.id)
-                const ordinal = sameProfileSessions.findIndex((item) => item.id === session.id) + 1
-                return (
-                  <button key={session.id} className={`session-tab ${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}`} onClick={() => {
-                    if (activeTool === 'editor' && activeSessionId !== session.id) setActiveTool(editorPanels.some((panel) => panel.sessionId === session.id) ? 'editor' : null)
-                    if (activeTool === 'sftp' && activeSessionId !== session.id) {
-                      const directory = latestDirectories.current.get(session.id) ?? session.currentDirectory
-                      if (directory && session.profile.kind !== 'local') setSftpStart({ sessionId: session.id, directory })
-                      else setActiveTool(null)
-                    }
-                    setActiveSessionId(session.id)
-                    setSelectedId(session.profile.id)
-                    setMainView('terminal')
-                  }} onDoubleClick={() => closeSessionTab(session)} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
-                    {session.profile.kind === 'local' ? <Monitor size={15} /> : <SquareTerminal size={15} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
-                  </button>
-                )
-              })}
-            </div>
-            <div className="tab-spacer" />
-          </div>
-
           <div className={`content-row ${activeTool === 'sftp' && mainView === 'terminal' ? 'panel-open' : ''} ${activeTool === 'editor' && mainView === 'terminal' ? 'editor-open' : ''}`} style={{ '--utility-width': `${utilityPanelWidth}px`, '--editor-width': `${editorWidth}%`, '--editor-height': `${editorHeight}%` } as CSSProperties}>
             <div className={`primary-view ${mainView === 'terminal' && splitMode ? `split-view split-${splitMode}` : ''}`}>
               <div className={`home-layer ${mainView === 'home' ? 'visible' : ''}`}>
