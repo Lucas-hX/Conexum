@@ -20,7 +20,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 
 - Real SSH connections through `/usr/bin/ssh` and `node-pty`.
 - An integrated local terminal using the macOS shell, available by default in a group named after your Mac.
-- Multiple independent sessions in compact tabs integrated into the macOS title bar, including multiple sessions to the same server.
+- Multiple independent sessions in compact, drag-reorderable tabs integrated into the macOS title bar, including multiple sessions to the same server.
 - A two-terminal split view or a grid of up to four open sessions.
 - A simplified Home screen with quick access to the local terminal and up to three SSH connections.
 - A unified title bar with compact session tabs, connection controls, and accessible tool descriptions.
@@ -31,7 +31,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Support for username, host, port, alias, and `IdentityFile`.
 - Integration with `ssh-agent` and macOS Keychain for passphrases.
 - A collapsible, resizable sidebar that becomes a temporary overlay when hidden.
-- Individual session closing with confirmation.
+- Individual session closing with confirmation and one-click reconnection from disconnected tabs.
 - Connection groups that can be renamed or deleted from their context menu.
 - Native Conexum identity in the window, Dock, menus, and About dialog.
 - Automated tests for SSH arguments, IPC validation, and session cleanup.
@@ -193,11 +193,11 @@ The editor requires an active SSH session. If the session ends, open content rem
 2. Double-click **Local terminal** to use this Mac, or create/import an SSH connection.
 3. Double-click a server to open an SSH session.
 4. Double-click it again to open another independent session to the same server.
-5. Hover a session tab for a safe status preview; use its close button or double-click the tab to end it with confirmation.
+5. Hover a session tab for a safe status preview; drag tabs to reorder them, use **R** to reconnect a disconnected tab, or use its close button or double-click the tab to end it with confirmation.
 
 If a connection ends, use **Reconnect** in the terminal or toolbar. Conexum keeps the tab's visible history and opens a new SSH session with the same profile.
 
-With two or more sessions open, **Split** shows two terminals side by side. Select it again for a grid of up to four sessions; a third selection returns to a single view. The active session always remains in the split view, and you can switch sessions from the title-bar tabs or by selecting another terminal. When tabs exceed the available width, they remain horizontally scrollable and are also available from the overflow menu.
+With two or more sessions open, **Split** shows two terminals side by side. Select it again for a grid of up to four sessions; a third selection returns to a single view. The active session always remains in the split view, and you can switch sessions from the title-bar tabs or by selecting another terminal. Drag a tab left or right to reorder it without restarting its session. When tabs exceed the available width, they remain horizontally scrollable and are also available from the overflow menu.
 
 Select the Conexum logo to return Home. When the connections sidebar is hidden, its title-bar button opens a temporary overlay without reducing the terminal width; use the pin button in the overlay to keep it open. Session hover previews show only connection metadata, status, current directory, and available CPU/RAM metrics—they never capture terminal content or keystrokes.
 

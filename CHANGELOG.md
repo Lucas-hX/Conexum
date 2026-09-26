@@ -10,6 +10,8 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 - The README, shell-integration guide, native dialogs, validation messages, Editor, SFTP browser, and terminal status messages now use English by default.
 - Built-in Conexum Dark, Midnight Blue, and Graphite themes apply live to the application, terminal, and editor and persist locally.
 - SSH connections can be duplicated from their context menu into a new editable profile without copying or storing credentials.
+- Session tabs can be reordered with drag and drop without restarting their terminals.
+- Disconnected or failed tabs show a compact **R** action that reconnects the existing tab while preserving visible history.
 
 ## 0.6.6 — 2026-09-20
 

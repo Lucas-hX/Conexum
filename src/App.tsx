@@ -86,6 +86,8 @@ const EditorPane = lazy(() => import('./EditorApp'))
 type EditorPanel = { sessionId: string; profileName: string; request: EditorRequest }
 type EditorState = { dirty: boolean; saving: boolean }
 type SessionPreview = { sessionId: string; left: number; top: number }
+type TabDropTarget = { sessionId: string; position: 'before' | 'after' }
+type TabPointerDrag = { sourceId: string; pointerId: number; startX: number; moved: boolean; target: TabDropTarget | null }
 
 function parseOsc7Directory(value: string) {
   if (!value || value.length > 4_096 || /[\r\n\0]/.test(value)) return null
@@ -518,11 +520,15 @@ export function App() {
   const [tabsOverflowing, setTabsOverflowing] = useState(false)
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false)
   const [sessionPreview, setSessionPreview] = useState<SessionPreview | null>(null)
+  const [draggedSessionId, setDraggedSessionId] = useState<string | null>(null)
+  const [tabDropTarget, setTabDropTarget] = useState<TabDropTarget | null>(null)
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map())
   const latestDirectories = useRef<Map<string, string>>(new Map())
   const sessionTabsRef = useRef<HTMLDivElement>(null)
   const tabsMenuRef = useRef<HTMLDivElement>(null)
   const previewTimerRef = useRef<number | null>(null)
+  const tabPointerDragRef = useRef<TabPointerDrag | null>(null)
+  const suppressedTabClickRef = useRef<string | null>(null)
 
   const selected = selectedId === LOCAL_PROFILE_ID ? localProfile : profiles.find((profile) => profile.id === selectedId) ?? null
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null
@@ -849,6 +855,74 @@ export function App() {
     if (selected) openSession(selected)
   }
 
+  const reconnectSession = (session: SshSessionTab) => {
+    activateSession(session)
+    void terminalRefs.current.get(session.id)?.connect(session.profile, { preserveHistory: true })
+  }
+
+  const reorderSession = (sourceId: string, targetId: string, position: TabDropTarget['position']) => {
+    if (sourceId === targetId) return
+    setSessions((current) => {
+      const source = current.find((session) => session.id === sourceId)
+      if (!source) return current
+      const remaining = current.filter((session) => session.id !== sourceId)
+      const targetIndex = remaining.findIndex((session) => session.id === targetId)
+      if (targetIndex < 0) return current
+      remaining.splice(targetIndex + (position === 'after' ? 1 : 0), 0, source)
+      return remaining
+    })
+  }
+
+  const finishTabDrag = () => {
+    setDraggedSessionId(null)
+    setTabDropTarget(null)
+  }
+
+  const startTabPointerDrag = (event: React.PointerEvent<HTMLButtonElement>, sourceId: string) => {
+    if (event.button !== 0) return
+    tabPointerDragRef.current = { sourceId, pointerId: event.pointerId, startX: event.clientX, moved: false, target: null }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const moveTabPointerDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = tabPointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (!drag.moved && Math.abs(event.clientX - drag.startX) < 6) return
+    event.preventDefault()
+    if (!drag.moved) {
+      drag.moved = true
+      setDraggedSessionId(drag.sourceId)
+      hideSessionPreview()
+    }
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-session-id]')
+    const targetId = target?.dataset.sessionId
+    if (!target || !targetId || targetId === drag.sourceId) {
+      drag.target = null
+      setTabDropTarget(null)
+      return
+    }
+    const bounds = target.getBoundingClientRect()
+    drag.target = { sessionId: targetId, position: event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after' }
+    setTabDropTarget(drag.target)
+  }
+
+  const endTabPointerDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = tabPointerDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (drag.moved) {
+      event.preventDefault()
+      suppressedTabClickRef.current = drag.sourceId
+      if (drag.target) reorderSession(drag.sourceId, drag.target.sessionId, drag.target.position)
+    }
+    tabPointerDragRef.current = null
+    finishTabDrag()
+  }
+
+  const cancelTabPointerDrag = () => {
+    tabPointerDragRef.current = null
+    finishTabDrag()
+  }
+
   const closeSessionTab = (session: SshSessionTab) => {
     const editorState = editorStates[session.id]
     if (editorState?.saving) { window.alert(text('Wait for the remote save to finish before closing this session.', 'Esperá a que termine el guardado remoto antes de cerrar esta sesión.')); return }
@@ -1139,10 +1213,17 @@ export function App() {
               const ordinal = sameProfileSessions.findIndex((item) => item.id === session.id) + 1
               const active = mainView === 'terminal' && activeSessionId === session.id
               return (
-                <div key={session.id} data-session-id={session.id} className={`session-tab ${active ? 'active' : ''}`} onMouseEnter={(event) => scheduleSessionPreview(event, session.id)} onMouseLeave={hideSessionPreview}>
-                  <button className="session-tab-main" role="tab" aria-selected={active} onClick={() => activateSession(session)} onDoubleClick={(event) => { event.stopPropagation(); hideSessionPreview(); closeSessionTab(session) }} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
+                <div
+                  key={session.id}
+                  data-session-id={session.id}
+                  className={`session-tab ${active ? 'active' : ''} ${draggedSessionId === session.id ? 'dragging' : ''} ${tabDropTarget?.sessionId === session.id ? `drop-${tabDropTarget.position}` : ''}`}
+                  onMouseEnter={(event) => scheduleSessionPreview(event, session.id)}
+                  onMouseLeave={hideSessionPreview}
+                >
+                  <button className="session-tab-main" role="tab" aria-selected={active} onPointerDown={(event) => startTabPointerDrag(event, session.id)} onPointerMove={moveTabPointerDrag} onPointerUp={endTabPointerDrag} onPointerCancel={cancelTabPointerDrag} onClick={() => { if (suppressedTabClickRef.current === session.id) { suppressedTabClickRef.current = null; return }; activateSession(session) }} onDoubleClick={(event) => { event.stopPropagation(); hideSessionPreview(); closeSessionTab(session) }} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
                     {session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
+                  {(session.status === 'disconnected' || session.status === 'error') && <button className="session-tab-reconnect" onClick={(event) => { event.stopPropagation(); hideSessionPreview(); reconnectSession(session) }} aria-label={text(`Reconnect ${session.profile.name}`, `Reconectar ${session.profile.name}`)} title={text('Reconnect session', 'Reconectar sesión')}>R</button>}
                   <button className="session-tab-close" onClick={() => { hideSessionPreview(); closeSessionTab(session) }} aria-label={text(`Close ${session.profile.name}`, `Cerrar ${session.profile.name}`)} title={text('Close session', 'Cerrar sesión')}><X size={12} /></button>
                 </div>
               )
@@ -1155,8 +1236,9 @@ export function App() {
             {sessions.map((session) => {
               const matches = sessions.filter((item) => item.profile.id === session.profile.id)
               const ordinal = matches.findIndex((item) => item.id === session.id) + 1
-              return <div key={session.id} className={mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''}>
+              return <div key={session.id} className={`${mainView === 'terminal' && activeSessionId === session.id ? 'active' : ''} ${session.status === 'disconnected' || session.status === 'error' ? 'can-reconnect' : ''}`}>
                 <button onClick={() => activateSession(session)}>{session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span>{session.profile.name}{matches.length > 1 ? ` #${ordinal}` : ''}</span><i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} /></button>
+                {(session.status === 'disconnected' || session.status === 'error') && <button className="overflow-reconnect" onClick={() => reconnectSession(session)} aria-label={text(`Reconnect ${session.profile.name}`, `Reconectar ${session.profile.name}`)} title={text('Reconnect session', 'Reconectar sesión')}>R</button>}
                 <button className="overflow-close" onClick={() => closeSessionTab(session)} aria-label={text(`Close ${session.profile.name}`, `Cerrar ${session.profile.name}`)}><X size={12} /></button>
               </div>
             })}
@@ -1216,7 +1298,7 @@ export function App() {
                 return <div key={session.id} className={`terminal-panel terminal-layer ${splitVisible || singleVisible ? 'visible' : ''} ${splitMode ? (splitVisible ? 'split-pane' : 'split-hidden') : ''}`} onMouseDown={() => setActiveSessionId(session.id)}>
                   <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
                   {(session.status === 'disconnected' || session.status === 'error') && (
-                    <button className="terminal-reconnect" onClick={(event) => { event.stopPropagation(); void terminalRefs.current.get(session.id)?.connect(session.profile, { preserveHistory: true }) }}>
+                    <button className="terminal-reconnect" onClick={(event) => { event.stopPropagation(); reconnectSession(session) }}>
                       <RefreshCw size={13} />{text('Reconnect', 'Reconectar')}
                     </button>
                   )}
