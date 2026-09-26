@@ -6,6 +6,7 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 
 ### Added
 
+- The River Plate title-bar banner now uses a sharper panoramic stadium image focused on the historic scoreboard's **RIVER** display and the surrounding flags, with a slightly taller 72 px presentation that keeps the terminal dominant.
 - English is now the default interface language, with Spanish available from **Settings → Language** and the preference saved locally.
 - The README, shell-integration guide, native dialogs, validation messages, Editor, SFTP browser, and terminal status messages now use English by default.
 - Built-in Conexum Dark, Midnight Blue, and Graphite themes apply live to the application, terminal, and editor and persist locally.
