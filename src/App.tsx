@@ -72,8 +72,8 @@ const SIDEBAR_WIDTH_KEY = 'conexum.sidebarWidth.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const BRAND_ICON = './brand/conexum-icon.png'
 const BRAND_BANNER = './brand/conexum-welcome-banner.png'
-const THEME_912_BANNER = './brand/theme-912-monumental.jpg'
-const THEME_912_EMBLEM = './brand/theme-912-emblem.svg'
+const THEME_912_BANNER = new URL('./brand/theme-912-monumental.jpg', document.baseURI).href
+const THEME_912_EMBLEM = new URL('./brand/theme-river-plate-emblem.png', document.baseURI).href
 const LOCAL_PROFILE_ID = 'conexum-local'
 const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
   id: LOCAL_PROFILE_ID,
@@ -1205,7 +1205,8 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <header className="titlebar" style={themeId === '912' ? { '--theme-912-titlebar-image': `url("${THEME_912_BANNER}")` } as CSSProperties : undefined}>
+      <header className="titlebar">
+        {themeId === '912' && <><img className="theme-river-titlebar-photo" src={THEME_912_BANNER} alt="" aria-hidden="true" /><span className="theme-river-titlebar-overlay" aria-hidden="true" /></>}
         <button className={`brand ${mainView === 'home' ? 'active' : ''}`} onClick={showHome} aria-label={text('Home', 'Inicio')} title={text('Home', 'Inicio')}><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></button>
         <button className={`header-sidebar-toggle ${sidebarOpen || sidebarOverlayOpen ? 'active' : ''}`} onClick={() => sidebarOpen ? setSidebarOpen(false) : setSidebarOverlayOpen((current) => !current)} aria-label={sidebarOpen || sidebarOverlayOpen ? text('Hide connections', 'Ocultar conexiones') : text('Show connections', 'Mostrar conexiones')} title={text('Connections', 'Conexiones')}>{sidebarOpen || sidebarOverlayOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}</button>
         <div className="session-tabs-region">
@@ -1263,7 +1264,7 @@ export function App() {
             <button className="icon-button" aria-label={text('Settings', 'Ajustes')} title={text('Settings', 'Ajustes')} aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
               <label className="settings-language"><Languages size={14} /><span><strong>{text('Language', 'Idioma')}</strong><small>{text('Interface language', 'Idioma de la interfaz')}</small></span><select value={language} onChange={(event) => setLanguage(event.target.value as 'en' | 'es')} aria-label={text('Language', 'Idioma')}><option value="en">English</option><option value="es">Español</option></select></label>
-              <label className="settings-theme"><Palette size={14} /><span><strong>{text('Theme', 'Tema')}</strong><small>{text('App, terminal, and editor', 'Aplicación, terminal y editor')}</small></span><select value={themeId} onChange={(event) => setThemeId(event.target.value as keyof typeof themes)} aria-label={text('Theme', 'Tema')}><option value="conexum-dark">Conexum Dark</option><option value="midnight-blue">Midnight Blue</option><option value="graphite">Graphite</option><option value="912">912</option></select></label>
+              <label className="settings-theme"><Palette size={14} /><span><strong>{text('Theme', 'Tema')}</strong><small>{text('App, terminal, and editor', 'Aplicación, terminal y editor')}</small></span><select value={themeId} onChange={(event) => setThemeId(event.target.value as keyof typeof themes)} aria-label={text('Theme', 'Tema')}><option value="conexum-dark">Conexum Dark</option><option value="midnight-blue">Midnight Blue</option><option value="graphite">Graphite</option><option value="912">River Plate</option></select></label>
               <i />
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
