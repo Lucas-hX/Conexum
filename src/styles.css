@@ -2253,6 +2253,8 @@ button {
 .app-shell { background: var(--theme-shell, #0b1016); }
 .titlebar { background: linear-gradient(180deg, var(--theme-titlebarTop, #171e26), var(--theme-titlebarBottom, #141a21)); border-bottom-color: var(--theme-border, #2b3540); }
 html[data-theme='912'] .titlebar {
+  flex-basis: 72px;
+  min-height: 72px;
   background-color: var(--theme-titlebarBottom, #141a21);
   box-shadow: inset 0 1px #ffffff0a, inset 0 -1px #0008;
 }
@@ -2264,12 +2266,12 @@ html[data-theme='912'] .titlebar {
   height: 100%;
   pointer-events: none;
 }
-.theme-river-titlebar-photo { z-index: 0; object-fit: cover; object-position: center 58%; }
+.theme-river-titlebar-photo { z-index: 0; object-fit: cover; object-position: center 11%; }
 .theme-river-titlebar-overlay {
   z-index: 0;
   background:
     linear-gradient(90deg, #09090ae0 0%, #09090a91 18%, #09090a36 48%, #09090a78 80%, #09090ad1 100%),
-    linear-gradient(180deg, #09090a0d 0%, #09090a91 100%);
+    linear-gradient(180deg, #09090a08 0%, #09090a72 100%);
 }
 html[data-theme='912'] .titlebar > :not(.theme-river-titlebar-photo):not(.theme-river-titlebar-overlay) { z-index: 1; }
 html[data-theme='912'] .titlebar .brand,
