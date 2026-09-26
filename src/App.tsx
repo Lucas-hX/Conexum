@@ -69,11 +69,15 @@ type TerminalHandle = {
 const STORAGE_KEY = 'conexum.connectionProfiles.v2'
 const LEGACY_STORAGE_KEYS = ['conexum.connectionProfiles.v1']
 const SIDEBAR_WIDTH_KEY = 'conexum.sidebarWidth.v1'
+const RIVER_BANNER_HEIGHT_KEY = 'conexum.riverBannerHeight.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const BRAND_ICON = './brand/conexum-icon.png'
 const BRAND_BANNER = './brand/conexum-welcome-banner.png'
 const THEME_912_BANNER = new URL('./brand/theme-river-plate-banner-v2.jpg', document.baseURI).href
 const THEME_912_EMBLEM = new URL('./brand/theme-river-plate-emblem.png', document.baseURI).href
+const RIVER_BANNER_DEFAULT_HEIGHT = 72
+const RIVER_BANNER_MIN_HEIGHT = 56
+const RIVER_BANNER_MAX_HEIGHT = 168
 const LOCAL_PROFILE_ID = 'conexum-local'
 const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
   id: LOCAL_PROFILE_ID,
@@ -497,6 +501,13 @@ export function App() {
     const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY))
     return Number.isFinite(stored) ? Math.min(Math.max(stored, 180), 420) : 270
   })
+  const [riverBannerHeight, setRiverBannerHeight] = useState(() => {
+    const storedValue = localStorage.getItem(RIVER_BANNER_HEIGHT_KEY)
+    const stored = storedValue === null ? Number.NaN : Number(storedValue)
+    return Number.isFinite(stored)
+      ? Math.min(Math.max(stored, RIVER_BANNER_MIN_HEIGHT), RIVER_BANNER_MAX_HEIGHT)
+      : RIVER_BANNER_DEFAULT_HEIGHT
+  })
   const [utilityPanelWidth, setUtilityPanelWidth] = useState(480)
   const [editorWidth, setEditorWidth] = useState(58)
   const [editorHeight, setEditorHeight] = useState(63)
@@ -528,6 +539,7 @@ export function App() {
   const latestDirectories = useRef<Map<string, string>>(new Map())
   const sessionTabsRef = useRef<HTMLDivElement>(null)
   const tabsMenuRef = useRef<HTMLDivElement>(null)
+  const riverBannerLastPointerDownRef = useRef(0)
   const previewTimerRef = useRef<number | null>(null)
   const tabPointerDragRef = useRef<TabPointerDrag | null>(null)
   const suppressedTabClickRef = useRef<string | null>(null)
@@ -598,6 +610,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth))
   }, [sidebarWidth])
+
+  useEffect(() => {
+    localStorage.setItem(RIVER_BANNER_HEIGHT_KEY, String(riverBannerHeight))
+  }, [riverBannerHeight])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -1144,6 +1160,40 @@ export function App() {
     window.addEventListener('pointerup', stop)
   }
 
+  const startRiverBannerResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const now = performance.now()
+    if (now - riverBannerLastPointerDownRef.current < 400) {
+      riverBannerLastPointerDownRef.current = 0
+      setRiverBannerHeight(RIVER_BANNER_DEFAULT_HEIGHT)
+      return
+    }
+    riverBannerLastPointerDownRef.current = now
+    const startY = event.clientY
+    const startHeight = riverBannerHeight
+    const move = (moveEvent: PointerEvent) => setRiverBannerHeight(Math.min(Math.max(
+      startHeight + moveEvent.clientY - startY,
+      RIVER_BANNER_MIN_HEIGHT,
+    ), RIVER_BANNER_MAX_HEIGHT))
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+
+  const resizeRiverBannerWithKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const step = event.shiftKey ? 12 : 4
+    let nextHeight: number | null = null
+    if (event.key === 'ArrowUp') nextHeight = riverBannerHeight - step
+    if (event.key === 'ArrowDown') nextHeight = riverBannerHeight + step
+    if (event.key === 'Home') nextHeight = RIVER_BANNER_MIN_HEIGHT
+    if (event.key === 'End') nextHeight = RIVER_BANNER_MAX_HEIGHT
+    if (nextHeight === null) return
+    event.preventDefault()
+    setRiverBannerHeight(Math.min(Math.max(nextHeight, RIVER_BANNER_MIN_HEIGHT), RIVER_BANNER_MAX_HEIGHT))
+  }
+
   const startUtilityResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -1205,7 +1255,7 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <header className="titlebar">
+      <header className="titlebar" style={themeId === '912' ? { '--river-banner-height': `${riverBannerHeight}px` } as CSSProperties : undefined}>
         {themeId === '912' && <><img className="theme-river-titlebar-photo" src={THEME_912_BANNER} alt="" aria-hidden="true" /><span className="theme-river-titlebar-overlay" aria-hidden="true" /></>}
         <button className={`brand ${mainView === 'home' ? 'active' : ''}`} onClick={showHome} aria-label={text('Home', 'Inicio')} title={text('Home', 'Inicio')}><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></button>
         <button className={`header-sidebar-toggle ${sidebarOpen || sidebarOverlayOpen ? 'active' : ''}`} onClick={() => sidebarOpen ? setSidebarOpen(false) : setSidebarOverlayOpen((current) => !current)} aria-label={sidebarOpen || sidebarOverlayOpen ? text('Hide connections', 'Ocultar conexiones') : text('Show connections', 'Mostrar conexiones')} title={text('Connections', 'Conexiones')}>{sidebarOpen || sidebarOverlayOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}</button>
@@ -1274,6 +1324,19 @@ export function App() {
             </div>}
           </div>
         </nav>
+        {themeId === '912' && <button
+          className="river-banner-resizer"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={text('Resize River Plate banner', 'Cambiar tamaño del banner River Plate')}
+          aria-valuemin={RIVER_BANNER_MIN_HEIGHT}
+          aria-valuemax={RIVER_BANNER_MAX_HEIGHT}
+          aria-valuenow={Math.round(riverBannerHeight)}
+          title={text('Drag to resize · Double-click to reset', 'Arrastrá para cambiar el tamaño · Doble clic para restablecer')}
+          onPointerDown={startRiverBannerResize}
+          onKeyDown={resizeRiverBannerWithKeyboard}
+          onDoubleClick={() => setRiverBannerHeight(RIVER_BANNER_DEFAULT_HEIGHT)}
+        />}
       </header>
 
       {previewedSession && sessionPreview && <div className="session-preview-card" style={{ left: sessionPreview.left, top: sessionPreview.top }}>
