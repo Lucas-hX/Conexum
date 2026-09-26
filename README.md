@@ -45,7 +45,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Copyable connection diagnostics that never capture terminal content.
 - An integrated, resizable editor beside the terminal with an SFTP tree, Monaco, tabs, and safe remote saving.
 - English as the default interface language, with Spanish available from **Settings → Language**.
-- Coordinated built-in themes for the interface, terminal, and editor: Conexum Dark, Midnight Blue, and Graphite.
+- Coordinated built-in themes for the interface, terminal, and editor: Conexum Dark, Midnight Blue, Graphite, and the **912** River Plate tribute.
 
 Code signing and notarization, advanced editor features, and other improvements in the [roadmap](ROADMAP.md) are still pending.
 
@@ -163,7 +163,9 @@ With a tab selected, **SSH diagnostics** shows only sanitized profile and OpenSS
 
 ## Themes and connection duplication
 
-Choose **Settings → Theme** to switch between **Conexum Dark**, **Midnight Blue**, and **Graphite**. The selection is saved locally and applies immediately to the application chrome, open terminals, and Conexum Editor without reconnecting a session.
+Choose **Settings → Theme** to switch between **Conexum Dark**, **Midnight Blue**, **Graphite**, and **912**. The selection is saved locally and applies immediately to the application chrome, open terminals, and Conexum Editor without reconnecting a session.
+
+**912** is an unofficial River Plate fan tribute. It keeps Conexum's dark, terminal-first palette, places a maintainer-supplied real Monumental photograph inside the existing title/tab bar without increasing its height, and adds a compact circular tribute emblem beside CPU/RAM. The decoration loads only while the theme is selected and never covers terminal content.
 
 Right-click an SSH connection and choose **Duplicate…** to prepare a new profile with the same group, destination, port, username, and configured key path. The copy receives a new identifier and opens in the connection form so you can change its name, username, or other settings before saving. As with every Conexum profile, no password, passphrase, or private-key content is copied or stored.
 

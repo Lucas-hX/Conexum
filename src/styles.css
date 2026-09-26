@@ -2252,6 +2252,30 @@ button {
 
 .app-shell { background: var(--theme-shell, #0b1016); }
 .titlebar { background: linear-gradient(180deg, var(--theme-titlebarTop, #171e26), var(--theme-titlebarBottom, #141a21)); border-bottom-color: var(--theme-border, #2b3540); }
+html[data-theme='912'] .titlebar {
+  background-color: var(--theme-titlebarBottom, #141a21);
+  background-image:
+    linear-gradient(90deg, #080c11e6 0%, #080c11b8 20%, #080c1170 48%, #080c119c 78%, #080c11e6 100%),
+    linear-gradient(180deg, #05080b1f 0%, #080c11b5 100%),
+    var(--theme-912-titlebar-image);
+  background-position: center, center, center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 100% 100%, cover;
+  box-shadow: inset 0 1px #ffffff0a, inset 0 -1px #0008;
+}
+html[data-theme='912'] .titlebar .brand,
+html[data-theme='912'] .titlebar .header-sidebar-toggle,
+html[data-theme='912'] .titlebar .toolbar { text-shadow: 0 1px 4px #000; }
+html[data-theme='912'] .session-tab {
+  border-color: #46545d;
+  background: #0d151dcc;
+  box-shadow: 0 3px 10px #0009;
+  backdrop-filter: blur(2px);
+}
+html[data-theme='912'] .session-tab.active {
+  border-color: var(--theme-accentStrong, #377da8);
+  background: linear-gradient(180deg, #193343e8, #122633e8);
+}
 .brand { color: var(--theme-text, #d9e0e8); }
 .brand:hover, .brand.active { color: var(--theme-textStrong, #eef5fb); background: var(--theme-hover, #ffffff0b); }
 .brand.active { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theme-accent, #55aef0) 32%, transparent); }
@@ -2329,6 +2353,7 @@ button {
 .editor-tab-select > i { background: var(--theme-accent, #55aef0); }
 
 .statusbar { color: var(--theme-muted, #aebac4); background: var(--theme-panel, #141b22); border-top-color: var(--theme-border, #2b3540); }
+.theme-912-emblem { width: 25px; height: 25px; flex: 0 0 auto; object-fit: contain; filter: saturate(.92); opacity: .92; }
 .session-directory { color: var(--theme-text, #d9e0e8); }
 .directory-help-trigger { border-bottom-color: var(--theme-accent, #55aef0); }
 .directory-help-trigger:hover, .directory-help-trigger:focus-visible { color: var(--theme-accentText, #8bd0ff); }

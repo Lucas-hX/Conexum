@@ -12,6 +12,7 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 - SSH connections can be duplicated from their context menu into a new editable profile without copying or storing credentials.
 - Session tabs can be reordered with drag and drop without restarting their terminals.
 - Disconnected or failed tabs show a compact **R** action that reconnects the existing tab while preserving visible history.
+- The new **912** theme adds a real Monumental crowd photograph behind the existing session tabs and a compact circular River Plate tribute emblem beside CPU/RAM without reducing terminal space.
 
 ## 0.6.6 — 2026-09-20
 

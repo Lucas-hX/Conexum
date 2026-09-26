@@ -2,7 +2,7 @@ import { createContext, useContext, useLayoutEffect, useMemo, useState } from 'r
 import type { ReactNode } from 'react'
 import type { ITheme } from '@xterm/xterm'
 
-export type ThemeId = 'conexum-dark' | 'midnight-blue' | 'graphite'
+export type ThemeId = 'conexum-dark' | 'midnight-blue' | 'graphite' | '912'
 
 type EditorTheme = {
   base: 'vs-dark'
@@ -101,6 +101,34 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         'editor.background': '#121416', 'editor.foreground': '#dadddf', 'editorLineNumber.foreground': '#5b6266',
         'editorLineNumber.activeForeground': '#a8afb3', 'editor.lineHighlightBackground': '#ffffff08', 'editor.selectionBackground': '#58788a55',
         'editorCursor.foreground': '#9cc4d6', 'editorIndentGuide.background1': '#2b3033', 'editorIndentGuide.activeBackground1': '#50585d',
+      },
+    },
+  },
+  '912': {
+    id: '912',
+    ui: {
+      canvas: '#080c11', shell: '#0b1016', titlebarTop: '#171e26', titlebarBottom: '#141a21', sidebarTop: '#171d24', sidebarBottom: '#141a21',
+      panel: '#141b22', panelAlt: '#111820', raised: '#1a222a', input: '#10161c', terminal: '#080d12', terminalGlow: '#0e151c',
+      border: '#30363d', borderStrong: '#454d55', text: '#d9e0e8', textStrong: '#f4f6f8', muted: '#adb7c0', faint: '#727d87',
+      accent: '#63b1e3', accentStrong: '#377da8', accentText: '#94d0f4', accentSurface: '#172b38', selection: '#24506a66',
+      hover: '#ffffff0d', hoverStrong: '#ffffff16', scrim: '#020509b8', shadow: '#000a', danger: '#d98a8f', success: '#62bdc8',
+      welcomeSolid: '#0b1119', welcomeFade: '#0b1119ec', welcomeClear: '#0b111966',
+    },
+    terminal: {
+      background: '#080d12', foreground: '#d6dde7', cursor: '#80c8ed', selectionBackground: '#2c668755',
+      black: '#111820', red: '#df6269', green: '#65d881', yellow: '#e9c870', blue: '#63a8e7', magenta: '#ba8adf', cyan: '#63cbd2', white: '#d6dde7',
+      brightBlack: '#68727b', brightRed: '#ec858a', brightGreen: '#84e39a', brightYellow: '#f1d891', brightBlue: '#85bbe9', brightMagenta: '#cda7e8', brightCyan: '#87dade', brightWhite: '#f4f6f8',
+    },
+    editor: {
+      base: 'vs-dark',
+      rules: [
+        { token: 'comment', foreground: '6F7C85' }, { token: 'keyword', foreground: 'C895BD' }, { token: 'string', foreground: 'D4A36E' },
+        { token: 'number', foreground: '79C0AA' }, { token: 'type', foreground: '71AEDD' },
+      ],
+      colors: {
+        'editor.background': '#0b1015', 'editor.foreground': '#d7dfe7', 'editorLineNumber.foreground': '#55616b',
+        'editorLineNumber.activeForeground': '#a0aab2', 'editor.lineHighlightBackground': '#4e8cac12', 'editor.selectionBackground': '#34779855',
+        'editorCursor.foreground': '#80c8ed', 'editorIndentGuide.background1': '#283139', 'editorIndentGuide.activeBackground1': '#4b5962',
       },
     },
   },
