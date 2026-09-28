@@ -20,7 +20,7 @@
     "preview": "vite preview",
     "desktop": "tsc -b && vite build && electron .",
     "rebuild:native": "electron-rebuild -f -w node-pty",
-    "package:mac": "pnpm run build && electron-builder --mac dir",
+    "package:mac": "pnpm run build && electron-builder --mac dmg",
     "update:local": "./scripts/update-conexum.command"
   },
   "dependencies": {
@@ -65,7 +65,7 @@
       "category": "public.app-category.developer-tools",
       "icon": "public/brand/conexum-icon.png",
       "target": [
-        "dir"
+        "dmg"
       ]
     }
   }

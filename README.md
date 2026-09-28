@@ -35,7 +35,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Connection groups that can be renamed or deleted from their context menu.
 - Native Conexum identity in the window, Dock, menus, and About dialog.
 - Automated tests for SSH arguments, IPC validation, and session cleanup.
-- Reproducible local packaging as `Conexum.app`.
+- Reproducible local packaging as `Conexum.app` and an installable DMG.
 - Automated validation and test packaging in GitHub Actions.
 - A separate remote directory per tab through OSC 7.
 - Discreet CPU and RAM metrics for the active tab every nine seconds.
@@ -101,7 +101,7 @@ pnpm run update:local
 
 Real SSH connections are available only in Electron. The browser version is intended for interface development and review.
 
-The local package is generated at `release/mac-arm64/Conexum.app` on Apple Silicon or the corresponding Intel directory. Because the app is unsigned, macOS may request extra confirmation before opening it. Pull requests and changes to `main` run the same checks in GitHub Actions and produce a downloadable test ZIP for 14 days.
+The local package includes `release/mac-arm64/Conexum.app` and `release/Conexum-0.6.6-arm64.dmg` on Apple Silicon, with the corresponding architecture-specific paths on Intel. Open the DMG and drag Conexum to Applications. Because the app is unsigned, macOS may request extra confirmation before opening it. Pull requests and changes to `main` run the same checks in GitHub Actions and produce a downloadable DMG and test ZIP for 14 days.
 
 ## Alpha updates
 
@@ -250,7 +250,7 @@ The minimum desktop test matrix is:
 | Two sessions using one profile | Required before release | Contributor verification |
 | Close one tab without affecting another | Required before release | Contributor verification |
 | SSH config and IdentityFile import | Required before release | Contributor verification |
-| Build and open `Conexum.app` | Automated and manual | Contributor verification |
+| Build and open `Conexum.app` from a DMG | Automated and manual | Contributor verification |
 
 The automated workflow validates the GitHub-hosted macOS environment. Apple Silicon and Intel must also be tested manually on real hardware before a public release.
 
@@ -275,4 +275,4 @@ Contributions should preserve the project's core principles: terminal first, low
 
 ## Distribution status
 
-`pnpm run package:mac` generates a local bundle identified as Conexum. This package is intended for development and testing among contributors; it is not yet signed, notarized, or distributed with an installer. Those steps remain planned before public distribution.
+`pnpm run package:mac` generates a local `Conexum.app` and a DMG installer. This package is intended for development and testing among contributors; it is not yet signed or notarized. Those steps remain planned before public distribution.

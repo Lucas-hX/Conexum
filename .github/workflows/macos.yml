@@ -53,7 +53,9 @@ jobs:
       - name: Upload test application
         uses: actions/upload-artifact@v4
         with:
-          name: Conexum-macOS-unsigned
-          path: Conexum-macOS.zip
+          name: Conexum-macOS-unsigned-${{ runner.arch }}
+          path: |
+            Conexum-macOS.zip
+            release/*.dmg
           if-no-files-found: error
           retention-days: 14

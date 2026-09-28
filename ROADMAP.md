@@ -25,6 +25,7 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Panel de conexiones plegable y redimensionable.
 - Identidad visual inicial, íconos y banner.
 - Identidad nativa de Conexum en macOS y paquete `.app` local sin firma.
+- Imagen DMG local para instalar Conexum arrastrándolo a Aplicaciones.
 - Pruebas automatizadas del núcleo SSH, mensajes de terminal y limpieza de sesiones.
 - Validación automática y paquete de prueba mediante GitHub Actions.
 - Directorio remoto por pestaña mediante integración OSC 7 opcional.
@@ -167,7 +168,7 @@ Objetivo: producir una versión instalable para pruebas más amplias.
 - Recuperación limpia después de un cierre inesperado.
 - Bundle universal cuando las dependencias nativas lo permitan.
 - Firma con Developer ID y notarización de Apple.
-- Imagen DMG o mecanismo de instalación equivalente.
+- [x] Imagen DMG local para instalación mediante arrastrar y soltar.
 - Política de versiones, changelog y proceso de publicación.
 - Evaluación de actualizaciones automáticas para una etapa posterior.
 
