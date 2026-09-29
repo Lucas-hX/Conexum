@@ -73,7 +73,8 @@ const RIVER_BANNER_HEIGHT_KEY = 'conexum.riverBannerHeight.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const TERMINAL_FONT_SETTINGS_KEY = 'conexum.terminalFontSettings.v1'
 const TERMINAL_FONT_PRESETS = [
-  { id: 'jetbrains-mono', label: 'JetBrains Mono', family: '"JetBrains Mono", "SFMono-Regular", Menlo, monospace' },
+  { id: 'jetbrains-mono', label: 'JetBrains Mono', family: '"JetBrains Mono", "JetBrainsMono NF", "SFMono-Regular", Menlo, monospace' },
+  { id: 'jetbrains-mono-nerd', label: 'JetBrains Mono Nerd Font', family: '"JetBrainsMono NFM", "JetBrainsMono NF", "JetBrains Mono", "SFMono-Regular", Menlo, monospace' },
   { id: 'sf-mono', label: 'SF Mono', family: '"SFMono-Regular", Menlo, monospace' },
   { id: 'cascadia-code', label: 'Cascadia Code', family: '"Cascadia Code", "SFMono-Regular", Menlo, monospace' },
   { id: 'menlo', label: 'Menlo', family: 'Menlo, monospace' },
@@ -1365,7 +1366,7 @@ export function App() {
               <label className="settings-typography"><span className="settings-type-spacer" aria-hidden="true" /><span><strong>{text('Text size', 'Tamaño de texto')}</strong><small>{text('Applied immediately', 'Se aplica al instante')}</small></span><select value={terminalFontSettings.size} onChange={(event) => setTerminalFontSettings((current) => ({ ...current, size: Number(event.target.value) }))} aria-label={text('Terminal text size', 'Tamaño del texto de terminal')}>
                 {[11, 12, 13, 14, 15, 16, 18, 20, 22, 24].map((size) => <option key={size} value={size}>{size}px</option>)}
               </select></label>
-              <p className="settings-font-note">{text('Install JetBrains Mono in macOS to use it.', 'Instalá JetBrains Mono en macOS para poder usarla.')}</p>
+              <p className="settings-font-note">{text('Uses the selected font when installed; otherwise falls back to SF Mono.', 'Usa la fuente elegida si está instalada; si no, usa SF Mono.')}</p>
               <i />
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
