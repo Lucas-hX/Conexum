@@ -18,6 +18,8 @@ export type EditorRequest = { requestId: number; initialDirectory: string | null
 type EditorPaneProps = EditorContext & {
   profileName: string
   request: EditorRequest
+  fontFamily: string
+  fontSize: number
   visible: boolean
   connected: boolean
   onHide(): void
@@ -112,7 +114,7 @@ function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onO
   )
 }
 
-export function EditorPane({ sessionId, profileName, request, visible, connected, onHide, onClose, onStateChange }: EditorPaneProps) {
+export function EditorPane({ sessionId, profileName, request, fontFamily, fontSize, visible, connected, onHide, onClose, onStateChange }: EditorPaneProps) {
   const { text, error: localizeError } = useI18n()
   const { theme } = useTheme()
   const context = useMemo(() => ({ sessionId }), [sessionId])
@@ -380,9 +382,9 @@ export function EditorPane({ sessionId, profileName, request, visible, connected
                 onChange={(value) => setDocuments((current) => current.map((document) => document.path === activeDocument.path ? { ...document, draft: value ?? '' } : document))}
                 options={{
                   automaticLayout: true,
-                  fontFamily: 'SFMono-Regular, Menlo, Monaco, monospace',
-                  fontSize: 13,
-                  lineHeight: 21,
+                  fontFamily,
+                  fontSize,
+                  lineHeight: Math.round(fontSize * 1.62),
                   minimap: { enabled: false },
                   padding: { top: 14, bottom: 20 },
                   smoothScrolling: true,

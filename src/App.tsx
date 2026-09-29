@@ -71,6 +71,18 @@ const LEGACY_STORAGE_KEYS = ['conexum.connectionProfiles.v1']
 const SIDEBAR_WIDTH_KEY = 'conexum.sidebarWidth.v1'
 const RIVER_BANNER_HEIGHT_KEY = 'conexum.riverBannerHeight.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
+const TERMINAL_FONT_SETTINGS_KEY = 'conexum.terminalFontSettings.v1'
+const TERMINAL_FONT_PRESETS = [
+  { id: 'jetbrains-mono', label: 'JetBrains Mono', family: '"JetBrains Mono", "JetBrainsMono NF", "SFMono-Regular", Menlo, monospace' },
+  { id: 'jetbrains-mono-nerd', label: 'JetBrains Mono Nerd Font', family: '"JetBrainsMono NFM", "JetBrainsMono NF", "JetBrains Mono", "SFMono-Regular", Menlo, monospace' },
+  { id: 'sf-mono', label: 'SF Mono', family: '"SFMono-Regular", Menlo, monospace' },
+  { id: 'cascadia-code', label: 'Cascadia Code', family: '"Cascadia Code", "SFMono-Regular", Menlo, monospace' },
+  { id: 'menlo', label: 'Menlo', family: 'Menlo, monospace' },
+  { id: 'monaco', label: 'Monaco', family: 'Monaco, Menlo, monospace' },
+] as const
+type TerminalFontId = typeof TERMINAL_FONT_PRESETS[number]['id']
+type TerminalFontSettings = { family: TerminalFontId; size: number }
+const DEFAULT_TERMINAL_FONT_SETTINGS: TerminalFontSettings = { family: 'sf-mono', size: 14 }
 const BRAND_ICON = './brand/conexum-icon.png'
 const BRAND_BANNER = './brand/conexum-welcome-banner.png'
 const THEME_912_BANNER = new URL('./brand/theme-river-plate-banner-v2.jpg', document.baseURI).href
@@ -139,12 +151,30 @@ function loadRecentConnections(): string[] {
   }
 }
 
+function loadTerminalFontSettings(): TerminalFontSettings {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TERMINAL_FONT_SETTINGS_KEY) ?? 'null')
+    const family = TERMINAL_FONT_PRESETS.some((preset) => preset.id === stored?.family)
+      ? stored.family as TerminalFontId
+      : DEFAULT_TERMINAL_FONT_SETTINGS.family
+    const size = Number(stored?.size)
+    return {
+      family,
+      size: Number.isInteger(size) && size >= 11 && size <= 24 ? size : DEFAULT_TERMINAL_FONT_SETTINGS.size,
+    }
+  } catch {
+    return DEFAULT_TERMINAL_FONT_SETTINGS
+  }
+}
+
 const TerminalView = forwardRef<TerminalHandle, {
   sessionId: string
+  fontFamily: string
+  fontSize: number
   onStatusChange(status: SessionStatus): void
   onDirectoryChange(directory: string): void
   onIdentityNeeded(profile: ConnectionProfile): void
-}>(function TerminalView({ sessionId, onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
+}>(function TerminalView({ sessionId, fontFamily, fontSize, onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
   const { text, error: localizeError } = useI18n()
   const { theme } = useTheme()
   const hostRef = useRef<HTMLDivElement>(null)
@@ -160,8 +190,8 @@ const TerminalView = forwardRef<TerminalHandle, {
     const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
-      fontFamily: '"SFMono-Regular", "Cascadia Code", Menlo, monospace',
-      fontSize: 14,
+      fontFamily,
+      fontSize,
       lineHeight: 1.25,
       scrollback: 10_000,
       theme: theme.terminal,
@@ -225,6 +255,13 @@ const TerminalView = forwardRef<TerminalHandle, {
     if (terminalRef.current) terminalRef.current.options.theme = theme.terminal
   }, [theme])
 
+  useEffect(() => {
+    if (!terminalRef.current) return
+    terminalRef.current.options.fontFamily = fontFamily
+    terminalRef.current.options.fontSize = fontSize
+    fitRef.current?.fit()
+  }, [fontFamily, fontSize])
+
   useImperativeHandle(ref, () => ({
     async connect(profile, options = {}) {
       const terminal = terminalRef.current
@@ -281,8 +318,10 @@ const TerminalView = forwardRef<TerminalHandle, {
   return <div className="terminal-host" ref={hostRef} aria-label="Terminal" />
 })
 
-function ManagedTerminalSession({ session, onHandle, onStatusChange, onDirectoryChange, onIdentityNeeded }: {
+function ManagedTerminalSession({ session, fontFamily, fontSize, onHandle, onStatusChange, onDirectoryChange, onIdentityNeeded }: {
   session: SshSessionTab
+  fontFamily: string
+  fontSize: number
   onHandle(sessionId: string, handle: TerminalHandle | null): void
   onStatusChange(sessionId: string, status: SessionStatus): void
   onDirectoryChange(sessionId: string, directory: string): void
@@ -301,7 +340,7 @@ function ManagedTerminalSession({ session, onHandle, onStatusChange, onDirectory
     return () => onHandle(session.id, null)
   }, [])
 
-  return <TerminalView ref={terminalRef} sessionId={session.id} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
+  return <TerminalView ref={terminalRef} sessionId={session.id} fontFamily={fontFamily} fontSize={fontSize} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
 }
 
 function ToolButton({ label, icon, active, disabled, accent, onClick }: {
@@ -486,6 +525,7 @@ export function App() {
     error: text('Error', 'Error'),
   }
   const [profiles, setProfiles] = useState<ConnectionProfile[]>(loadProfiles)
+  const [terminalFontSettings, setTerminalFontSettings] = useState<TerminalFontSettings>(loadTerminalFontSettings)
   const [localProfile, setLocalProfile] = useState<ConnectionProfile>(() => ({
     ...DEFAULT_LOCAL_PROFILE,
     name: text('Local terminal', 'Terminal local'),
@@ -563,6 +603,7 @@ export function App() {
     return [...groups.entries()]
   }, [profiles, query])
   const showLocalProfile = `${localProfile.name} ${localProfile.group}`.toLowerCase().includes(query.toLowerCase())
+  const selectedFont = TERMINAL_FONT_PRESETS.find((preset) => preset.id === terminalFontSettings.family) ?? TERMINAL_FONT_PRESETS[1]
 
   useEffect(() => {
     void window.conexum?.local.getMachineInfo().then((machine) => {
@@ -614,6 +655,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(RIVER_BANNER_HEIGHT_KEY, String(riverBannerHeight))
   }, [riverBannerHeight])
+
+  useEffect(() => {
+    localStorage.setItem(TERMINAL_FONT_SETTINGS_KEY, JSON.stringify(terminalFontSettings))
+  }, [terminalFontSettings])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -1315,6 +1360,13 @@ export function App() {
             {settingsOpen && <div className="settings-menu">
               <label className="settings-language"><Languages size={14} /><span><strong>{text('Language', 'Idioma')}</strong><small>{text('Interface language', 'Idioma de la interfaz')}</small></span><select value={language} onChange={(event) => setLanguage(event.target.value as 'en' | 'es')} aria-label={text('Language', 'Idioma')}><option value="en">English</option><option value="es">Español</option></select></label>
               <label className="settings-theme"><Palette size={14} /><span><strong>{text('Theme', 'Tema')}</strong><small>{text('App, terminal, and editor', 'Aplicación, terminal y editor')}</small></span><select value={themeId} onChange={(event) => setThemeId(event.target.value as keyof typeof themes)} aria-label={text('Theme', 'Tema')}><option value="conexum-dark">Conexum Dark</option><option value="midnight-blue">Midnight Blue</option><option value="graphite">Graphite</option><option value="912">River Plate</option></select></label>
+              <label className="settings-typography"><SquareTerminal size={14} /><span><strong>{text('Font', 'Fuente')}</strong><small>{text('Terminal and editor', 'Terminal y editor')}</small></span><select value={terminalFontSettings.family} onChange={(event) => setTerminalFontSettings((current) => ({ ...current, family: event.target.value as TerminalFontId }))} aria-label={text('Terminal font', 'Fuente de terminal')}>
+                {TERMINAL_FONT_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+              </select></label>
+              <label className="settings-typography"><span className="settings-type-spacer" aria-hidden="true" /><span><strong>{text('Text size', 'Tamaño de texto')}</strong><small>{text('Applied immediately', 'Se aplica al instante')}</small></span><select value={terminalFontSettings.size} onChange={(event) => setTerminalFontSettings((current) => ({ ...current, size: Number(event.target.value) }))} aria-label={text('Terminal text size', 'Tamaño del texto de terminal')}>
+                {[11, 12, 13, 14, 15, 16, 18, 20, 22, 24].map((size) => <option key={size} value={size}>{size}px</option>)}
+              </select></label>
+              <p className="settings-font-note">{text('Uses the selected font when installed; otherwise falls back to SF Mono.', 'Usa la fuente elegida si está instalada; si no, usa SF Mono.')}</p>
               <i />
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
@@ -1362,7 +1414,7 @@ export function App() {
                 const splitVisible = mainView === 'terminal' && splitSessionIds.has(session.id)
                 const singleVisible = mainView === 'terminal' && !splitMode && activeSessionId === session.id
                 return <div key={session.id} className={`terminal-panel terminal-layer ${splitVisible || singleVisible ? 'visible' : ''} ${splitMode ? (splitVisible ? 'split-pane' : 'split-hidden') : ''}`} onMouseDown={() => setActiveSessionId(session.id)}>
-                  <ManagedTerminalSession session={session} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
+                  <ManagedTerminalSession session={session} fontFamily={selectedFont.family} fontSize={terminalFontSettings.size} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
                   {(session.status === 'disconnected' || session.status === 'error') && (
                     <button className="terminal-reconnect" onClick={(event) => { event.stopPropagation(); reconnectSession(session) }}>
                       <RefreshCw size={13} />{text('Reconnect', 'Reconectar')}
@@ -1377,7 +1429,7 @@ export function App() {
             )}
             {editorPanels.length > 0 && <div className={`editor-dock ${mainView === 'terminal' && activeTool === 'editor' ? 'visible' : ''}`}>
               {editorPanels.map((panel) => <div key={panel.sessionId} className={`editor-dock-layer ${mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId ? 'visible' : ''}`}>
-                <Suspense fallback={<div className="editor-loading">{text('Opening editor…', 'Abriendo editor…')}</div>}><EditorPane sessionId={panel.sessionId} profileName={panel.profileName} request={panel.request} visible={mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId} connected={sessions.find((session) => session.id === panel.sessionId)?.status === 'connected'} onHide={() => setActiveTool(null)} onClose={closeEditor} onStateChange={updateEditorState} /></Suspense>
+                <Suspense fallback={<div className="editor-loading">{text('Opening editor…', 'Abriendo editor…')}</div>}><EditorPane sessionId={panel.sessionId} profileName={panel.profileName} request={panel.request} fontFamily={selectedFont.family} fontSize={terminalFontSettings.size} visible={mainView === 'terminal' && activeTool === 'editor' && activeSessionId === panel.sessionId} connected={sessions.find((session) => session.id === panel.sessionId)?.status === 'connected'} onHide={() => setActiveTool(null)} onClose={closeEditor} onStateChange={updateEditorState} /></Suspense>
               </div>)}
             </div>}
             {mainView === 'terminal' && activeTool === 'editor' && <button className="editor-resizer" aria-label={text('Resize editor', 'Cambiar tamaño del editor')} onPointerDown={startEditorResize} onDoubleClick={() => { setEditorWidth(58); setEditorHeight(63) }} />}
