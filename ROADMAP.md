@@ -38,6 +38,7 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Encabezado unificado con pestañas compactas, menú de desborde y panel de conexiones superpuesto cuando está oculto.
 - Pestañas de sesión reordenables mediante arrastrar y soltar, con reconexión directa desde la pestaña desconectada.
 - Temas integrados y persistentes para interfaz, terminal y editor: Conexum Dark, Midnight Blue, Graphite y el homenaje especial River Plate.
+- Fuente y tamaño de texto configurables para terminal y editor, incluida JetBrains Mono instalada en macOS.
 - Duplicación contextual de perfiles SSH para reutilizar rápidamente un servidor con otro usuario o configuración.
 - SFTP y Editor abiertos en la última ruta informada por la pestaña cuando OSC 7 está disponible; si no, comienzan directamente en el home remoto y permiten cambiar de ruta manualmente.
 

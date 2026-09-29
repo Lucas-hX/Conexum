@@ -45,6 +45,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Copyable connection diagnostics that never capture terminal content.
 - An integrated, resizable editor beside the terminal with an SFTP tree, Monaco, tabs, and safe remote saving.
 - English as the default interface language, with Spanish available from **Settings → Language**.
+- Adjustable terminal and editor font family and text size from **Settings → Font**, including JetBrains Mono when installed on macOS.
 - Coordinated built-in themes for the interface, terminal, and editor: Conexum Dark, Midnight Blue, Graphite, and the **River Plate** tribute.
 
 Code signing and notarization, advanced editor features, and other improvements in the [roadmap](ROADMAP.md) are still pending.
