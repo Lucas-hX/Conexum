@@ -216,6 +216,7 @@ Right-click a connection to open a new session, duplicate it, or edit its settin
 - All privileged communication goes through a small, validated preload API.
 - Telemetry uses a separate non-interactive SSH process and cannot request credentials.
 - Remote directories arrive through OSC 7; Conexum does not scrape the terminal screen or record keystrokes.
+- Visible, focused terminals may write up to 1 MiB of validated UTF-8 text to the local clipboard through OSC 52. Clipboard reads, background tabs, unsupported selections, and malformed payloads are rejected.
 - The local directory is checked with `lsof` against the shell process every two seconds while the local tab is visible.
 - SFTP runs in a separate process with `BatchMode=yes`, without forwarding ports or requesting new credentials.
 - Deleting remote content always requires confirmation, and folders are removed only when empty.

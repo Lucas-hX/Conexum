@@ -87,6 +87,7 @@ declare global {
         getTelemetry(sessionId: string): Promise<RemoteTelemetry | null>
         getDiagnostics(sessionId: string): Promise<SshDiagnostics | null>
         copyDiagnostics(sessionId: string): Promise<boolean>
+        writeOsc52Clipboard(sessionId: string, payload: string): Promise<boolean>
         onData(callback: (event: { sessionId: string; data: string }) => void): () => void
         onExit(callback: (event: { sessionId: string; exitCode: number; signal?: number }) => void): () => void
       }

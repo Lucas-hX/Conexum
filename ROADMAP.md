@@ -41,6 +41,7 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Fuente y tamaño de texto configurables para terminal y editor, incluida JetBrains Mono instalada en macOS.
 - Duplicación contextual de perfiles SSH para reutilizar rápidamente un servidor con otro usuario o configuración.
 - SFTP y Editor abiertos en la última ruta informada por la pestaña cuando OSC 7 está disponible; si no, comienzan directamente en el home remoto y permiten cambiar de ruta manualmente.
+- Copia al portapapeles local mediante OSC 52 para herramientas de terminal a pantalla completa, limitada a escritura validada desde terminales visibles y enfocadas.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 

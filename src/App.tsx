@@ -215,6 +215,14 @@ const TerminalView = forwardRef<TerminalHandle, {
       if (directory) onDirectoryChange(directory)
       return true
     })
+    const clipboardDisposable = terminal.parser.registerOscHandler(52, (value) => {
+      const currentSessionId = sessionIdRef.current
+      const visible = Boolean(hostRef.current?.closest('.terminal-layer.visible'))
+      if (currentSessionId && visible) {
+        void window.conexum?.ssh.writeOsc52Clipboard(currentSessionId, value)
+      }
+      return true
+    })
     const removeDataListener = window.conexum?.ssh.onData(({ sessionId, data }) => {
       if (sessionId !== sessionIdRef.current) return
       terminal.write(data)
@@ -244,6 +252,7 @@ const TerminalView = forwardRef<TerminalHandle, {
       inputDisposable.dispose()
       resizeDisposable.dispose()
       directoryDisposable.dispose()
+      clipboardDisposable.dispose()
       observer.disconnect()
       terminal.dispose()
       terminalRef.current = null

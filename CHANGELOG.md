@@ -6,6 +6,7 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 
 ### Added
 
+- Visible, focused terminal sessions now support secure OSC 52 clipboard writes for fullscreen tools such as Codex, with strict Base64/UTF-8 validation, a 1 MiB limit, and no clipboard-read support.
 - The River Plate title-bar banner can now be resized vertically from its lower edge, remembers its height locally, supports keyboard resizing, and resets to 72 px on double-click.
 - The River Plate title-bar banner now uses a sharper panoramic stadium image focused on the historic scoreboard's **RIVER** display and the surrounding flags, with a slightly taller 72 px presentation that keeps the terminal dominant.
 - English is now the default interface language, with Spanish available from **Settings → Language** and the preference saved locally.
