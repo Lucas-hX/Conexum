@@ -135,16 +135,16 @@ El usuario puede abrir, modificar y guardar un archivo de texto remoto sin riesg
 
 Objetivo: reconocer herramientas de agentes ejecutadas en una terminal mediante una arquitectura agnóstica, comenzando por Codex y dejando adaptadores previstos para OpenCode y Claude.
 
-- Definir una interfaz común de adaptadores de agentes, sin acoplar la UI a un proveedor.
+- [x] Definir eventos de actividad agnósticos en la UI, sin acoplar las pestañas a un proveedor.
 - Incorporar eventos semánticos del shell, como OSC 133 o hooks equivalentes.
-- Implementar primero el adaptador de Codex.
+- [x] Integrar títulos de terminal, OSC 9 y bell usados por Codex sin inspeccionar la pantalla.
 - Detectar el inicio y finalización de `codex`, `opencode` y `claude` sin analizar visualmente la terminal.
-- Mostrar un indicador discreto con agente, estado y directorio de trabajo.
-- Identificar el repositorio activo de forma segura.
-- Mostrar archivos creados o modificados mediante el estado de Git.
+- [x] Mostrar un indicador discreto con actividad y directorio de trabajo.
+- [x] Identificar el repositorio activo de forma segura.
+- [x] Mostrar archivos creados o modificados mediante el estado de Git.
 - Permitir abrir esos archivos en el editor remoto.
-- Investigar una fuente de eventos estructurados de Codex para estados más precisos.
-- Diferenciar claramente archivos modificados de archivos simplemente leídos.
+- [x] Incorporar OSC 9, bell y título de terminal como fuentes estructuradas sin scraping.
+- [x] Diferenciar cambios staged, unstaged, untracked y conflictos sin leer archivos.
 - Agregar adaptadores de OpenCode y Claude cuando sus fuentes de eventos puedan validarse.
 - Hacer la observación explícita, visible y configurable por perfil.
 

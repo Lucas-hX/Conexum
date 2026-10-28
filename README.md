@@ -48,6 +48,9 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - English as the default interface language, with Spanish available from **Settings → Language**.
 - Adjustable terminal and editor font family and text size from **Settings → Font**, including JetBrains Mono when installed on macOS.
 - Coordinated built-in themes for the interface, terminal, and editor: Conexum Dark, Midnight Blue, Graphite, and the **River Plate** tribute.
+- Clickable HTTP/HTTPS links from plain terminal output and OSC 8 hyperlinks, opened with the default browser or Google Chrome.
+- Configurable terminal scrolling, optional desktop attention notifications, and title/OSC 9 activity indicators suited to fullscreen tools such as Codex.
+- A collapsible Git status panel with changed files and staged/unstaged diff statistics for local and SSH sessions.
 
 Code signing and notarization, advanced editor features, and other improvements in the [roadmap](ROADMAP.md) are still pending.
 
@@ -163,6 +166,18 @@ The Settings menu can export and import Conexum connections. A backup includes n
 
 With a tab selected, **SSH diagnostics** shows only sanitized profile and OpenSSH process data: destination, port, username, IdentityFile, status, and exit code. **Copy diagnostics** never includes terminal content or keystrokes.
 
+## Fullscreen terminal tools and Git context
+
+Conexum recognizes terminal title updates, bells, and OSC 9 notifications without reading the visible terminal buffer. This lets a tab, its hover preview, and the bottom status bar show a short activity label for fullscreen tools such as Codex. Optional desktop notifications are emitted only while Conexum is not focused and are rate-limited per session.
+
+Plain HTTP/HTTPS URLs and OSC 8 hyperlinks are clickable. Choose the default browser or Google Chrome under **Settings → Open links with**. Conexum rejects non-web protocols, embedded credentials, control characters, and oversized URLs before asking the operating system to open anything.
+
+For easier Codex scrollback, use `/tui` and select `scrollback`, or start Codex with `codex --no-alt-screen`. `/raw` or `Alt-R` switches to copy-friendly output. Conexum also provides precise, normal, fast, and very-fast wheel/trackpad sensitivity plus optional smooth scrolling under Settings.
+
+Select **Git** in the bottom bar to open the read-only repository panel. It shows the branch, changed paths, and staged/unstaged short statistics for the active directory. Remote checks reuse the active multiplexed SSH connection with `BatchMode=yes`; local checks use the shell process's actual working directory. The panel runs only fixed Git status/diff commands, never reads file contents, never injects text into the terminal, limits results to 200 paths, and refreshes only while visible.
+
+The new browser, notification, terminal-event, and Git APIs are platform-neutral in the renderer and preload boundary. Platform-specific executable discovery is isolated in Electron helpers, including direct Chrome executable candidates for Windows without `cmd.exe` or shell-built commands. A future Windows port still needs adapters for the interactive shell, SFTP binary discovery, keychain behavior, local working-directory discovery, packaging, and installer updates.
+
 ## Themes and connection duplication
 
 Choose **Settings → Theme** to switch between **Conexum Dark**, **Midnight Blue**, **Graphite**, and **River Plate**. The selection is saved locally and applies immediately to the application chrome, open terminals, and Conexum Editor without reconnecting a session.
@@ -218,6 +233,9 @@ Right-click a connection to open a new session, duplicate it, or edit its settin
 - All privileged communication goes through a small, validated preload API.
 - Telemetry uses a separate non-interactive SSH process and cannot request credentials.
 - Remote directories arrive through OSC 7; Conexum does not scrape the terminal screen or record keystrokes.
+- Activity labels arrive through terminal title, bell, or OSC 9 events; Conexum does not scrape terminal rows to infer what an agent is doing.
+- Git summaries execute only fixed read-only commands and expose paths plus aggregate counts, never file content or arbitrary renderer-supplied commands.
+- External links are limited to credential-free HTTP/HTTPS URLs and open without a command shell.
 - Visible, focused terminals may write up to 1 MiB of validated UTF-8 text to the local clipboard through OSC 52. Clipboard reads, background tabs, unsupported selections, and malformed payloads are rejected.
 - The local directory is checked with `lsof` against the shell process every two seconds while the local tab is visible.
 - SFTP runs in a separate process with `BatchMode=yes`, without forwarding ports or requesting new credentials.

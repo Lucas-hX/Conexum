@@ -26,6 +26,15 @@ contextBridge.exposeInMainWorld('conexum', {
     getMachineInfo: () => ipcRenderer.invoke('local:machine-info'),
     getCurrentDirectory: (sessionId) => ipcRenderer.invoke('local:current-directory', { sessionId }),
   },
+  external: {
+    openLink: (url, browser) => ipcRenderer.invoke('external:open-link', { url, browser }),
+  },
+  system: {
+    notify: (sessionId, title, body) => ipcRenderer.invoke('system:notify', { sessionId, title, body }),
+  },
+  git: {
+    summary: (sessionId, directory) => ipcRenderer.invoke('git:summary', { sessionId, directory }),
+  },
   profiles: {
     chooseIdentityFile: () => ipcRenderer.invoke('profiles:choose-identity'),
     importSshConfig: () => ipcRenderer.invoke('profiles:import-config'),

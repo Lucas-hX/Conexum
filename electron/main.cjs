@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, shell } = require('electron')
 const path = require('node:path')
 const os = require('node:os')
 const fs = require('node:fs')
@@ -8,6 +8,7 @@ const { promisify } = require('node:util')
 const pty = require('node-pty')
 const {
   SessionRegistry,
+  buildControlCommandSshArgs,
   buildTelemetrySshArgs,
   buildSshArgs,
   calculateTelemetry,
@@ -38,6 +39,8 @@ const {
 const { createBackup, parseBackup } = require('./profile-core.cjs')
 const { machineInfo, parseLsofCwd, validateLocalConnection } = require('./local-core.cjs')
 const { decodeOsc52Clipboard } = require('./clipboard-core.cjs')
+const { chromeLaunchCandidates, validateBrowserPreference, validateExternalUrl } = require('./external-core.cjs')
+const { buildRemoteGitCommand, parsePorcelainStatus, parseShortStat, validateGitDirectory } = require('./git-core.cjs')
 
 app.setName('Conexum')
 
@@ -52,6 +55,7 @@ const transferJobs = new Map()
 const transferSnapshots = new Map()
 const transferRetrySources = new Map()
 const localFileGrants = new Map()
+const notificationRateLimits = new Map()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
 // `/tmp` intentionally keeps the Unix socket path short. macOS exposes a much
 // longer per-user temp path and OpenSSH adds a temporary suffix while binding.
@@ -63,6 +67,100 @@ fs.chmodSync(controlDirectory, 0o700)
 
 function sendToRenderer(sender, channel, payload) {
   if (!sender.isDestroyed()) sender.send(channel, payload)
+}
+
+function executableFor(tool) {
+  if (process.platform === 'win32') return `${tool}.exe`
+  return `/usr/bin/${tool}`
+}
+
+async function readLocalCurrentDirectory(sessionId) {
+  if (!isValidSessionId(sessionId) || !sessions.has(sessionId)) return null
+  const local = localSessions.get(sessionId)
+  if (!local || process.platform !== 'darwin') return null
+  try {
+    const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-a', '-p', String(local.pid), '-d', 'cwd', '-Fn'], {
+      timeout: 1_800,
+      maxBuffer: 16_384,
+    })
+    return parseLsofCwd(stdout)
+  } catch {
+    return null
+  }
+}
+
+async function runLocalGit(directory, args, maxBuffer = 2_000_000) {
+  const { stdout } = await execFileAsync(executableFor('git'), ['-C', directory, ...args], {
+    encoding: 'utf8',
+    timeout: 5_000,
+    maxBuffer,
+    windowsHide: true,
+    env: { ...process.env, LC_ALL: 'C' },
+  })
+  return stdout
+}
+
+async function localGitSummary(sessionId) {
+  const directory = await readLocalCurrentDirectory(sessionId)
+  if (!directory) return { available: false, reason: 'directory-unavailable' }
+  const flavor = process.platform === 'win32' ? 'win32' : 'posix'
+  const validatedDirectory = validateGitDirectory(directory, flavor)
+  let root
+  try {
+    root = validateGitDirectory((await runLocalGit(validatedDirectory, ['rev-parse', '--show-toplevel'], 16_384)).trim(), flavor)
+  } catch {
+    return { available: false, reason: 'not-repository' }
+  }
+  try {
+    const [branchOutput, statusOutput, unstagedOutput, stagedOutput] = await Promise.all([
+      runLocalGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 16_384),
+      runLocalGit(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+      runLocalGit(root, ['diff', '--shortstat', '--no-ext-diff'], 16_384),
+      runLocalGit(root, ['diff', '--cached', '--shortstat', '--no-ext-diff'], 16_384),
+    ])
+    let branch = branchOutput.trim()
+    if (branch === 'HEAD') branch = (await runLocalGit(root, ['rev-parse', '--short', 'HEAD'], 16_384)).trim()
+    const status = parsePorcelainStatus(statusOutput)
+    return { available: true, root, branch, files: status.files, truncated: status.truncated, unstaged: parseShortStat(unstagedOutput), staged: parseShortStat(stagedOutput), updatedAt: Date.now() }
+  } catch {
+    return { available: false, reason: 'git-unavailable' }
+  }
+}
+
+async function runRemoteGit(context, directory, operation, maxBuffer = 2_000_000) {
+  const command = buildRemoteGitCommand(directory, operation)
+  const args = buildControlCommandSshArgs(context.connection, context.controlPath, command)
+  const { stdout } = await execFileAsync(executableFor('ssh'), args, {
+    encoding: 'utf8',
+    timeout: 6_000,
+    maxBuffer,
+    env: processEnvForSsh(),
+    windowsHide: true,
+  })
+  return stdout
+}
+
+async function remoteGitSummary(sessionId, directory) {
+  const context = sessionContext(sessionId)
+  const validatedDirectory = validateGitDirectory(directory)
+  let root
+  try {
+    root = validateGitDirectory((await runRemoteGit(context, validatedDirectory, 'root', 16_384)).trim())
+  } catch {
+    return { available: false, reason: 'not-repository' }
+  }
+  try {
+    const [branchOutput, statusOutput, unstagedOutput, stagedOutput] = await Promise.all([
+      runRemoteGit(context, root, 'branch', 16_384),
+      runRemoteGit(context, root, 'status'),
+      runRemoteGit(context, root, 'unstaged', 16_384),
+      runRemoteGit(context, root, 'staged', 16_384),
+    ])
+    const status = parsePorcelainStatus(statusOutput)
+    return { available: true, root, branch: branchOutput.trim(), files: status.files, truncated: status.truncated, unstaged: parseShortStat(unstagedOutput), staged: parseShortStat(stagedOutput), updatedAt: Date.now() }
+  } catch {
+    return { available: false, reason: 'git-unavailable' }
+  }
 }
 
 function publishTransfer(job, update) {
@@ -834,18 +932,56 @@ function registerSshHandlers() {
 function registerLocalHandlers() {
   ipcMain.handle('local:machine-info', () => machineInfo(os.hostname(), os.userInfo().username, os.homedir()))
 
-  ipcMain.handle('local:current-directory', async (_event, { sessionId } = {}) => {
-    if (!isValidSessionId(sessionId) || !sessions.has(sessionId)) return null
-    const local = localSessions.get(sessionId)
-    if (!local) return null
+  ipcMain.handle('local:current-directory', async (_event, { sessionId } = {}) => readLocalCurrentDirectory(sessionId))
+}
+
+function registerWorkspaceHandlers() {
+  ipcMain.handle('external:open-link', async (event, { url, browser } = {}) => {
+    if (event.sender.id !== mainWindowWebContentsId) return false
+    const validatedUrl = validateExternalUrl(url)
+    if (!validatedUrl) return false
+    const preference = validateBrowserPreference(browser)
+    if (preference === 'chrome') {
+      for (const candidate of chromeLaunchCandidates(process.platform)) {
+        if (process.platform !== 'darwin' && !fs.existsSync(candidate.command)) continue
+        try {
+          await execFileAsync(candidate.command, [...candidate.argsPrefix, validatedUrl], { timeout: 5_000, windowsHide: true })
+          return true
+        } catch {
+          // Try the next platform-specific Chrome location, then the default browser.
+        }
+      }
+    }
     try {
-      const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-a', '-p', String(local.pid), '-d', 'cwd', '-Fn'], {
-        timeout: 1_800,
-        maxBuffer: 16_384,
-      })
-      return parseLsofCwd(stdout)
+      await shell.openExternal(validatedUrl, { activate: true })
+      return true
     } catch {
-      return null
+      return false
+    }
+  })
+
+  ipcMain.handle('system:notify', (event, { sessionId, title, body } = {}) => {
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    if (event.sender.id !== mainWindowWebContentsId || owner?.isFocused() || !Notification.isSupported() || !isValidSessionId(sessionId) || !sessions.has(sessionId)) return false
+    if (typeof title !== 'string' || title.length < 1 || title.length > 100 || /[\r\n\0]/.test(title)) return false
+    if (typeof body !== 'string' || body.length < 1 || body.length > 500 || /\0/.test(body)) return false
+    const previous = notificationRateLimits.get(sessionId) ?? 0
+    if (Date.now() - previous < 5_000) return false
+    notificationRateLimits.set(sessionId, Date.now())
+    const notification = new Notification({ title, body, icon: appIconPath })
+    notification.on('click', () => { owner?.show(); owner?.focus() })
+    notification.show()
+    return true
+  })
+
+  ipcMain.handle('git:summary', async (event, { sessionId, directory } = {}) => {
+    if (event.sender.id !== mainWindowWebContentsId || !isValidSessionId(sessionId) || !sessions.has(sessionId)) return { available: false, reason: 'session-unavailable' }
+    if (localSessions.has(sessionId)) return localGitSummary(sessionId)
+    if (typeof directory !== 'string' || !directory) return { available: false, reason: 'directory-unavailable' }
+    try {
+      return await remoteGitSummary(sessionId, directory)
+    } catch {
+      return { available: false, reason: 'git-unavailable' }
     }
   })
 }
@@ -856,6 +992,7 @@ function closeAllSessions() {
   transferRetrySources.clear()
   sessionConnections.clear()
   localSessions.clear()
+  notificationRateLimits.clear()
   sessionDiagnostics.clear()
   sessions.closeAll()
 }
@@ -928,6 +1065,7 @@ ipcMain.on('editor:set-state', (event, { dirty, saving } = {}) => {
 
 registerSshHandlers()
 registerLocalHandlers()
+registerWorkspaceHandlers()
 registerProfileHandlers()
 registerSftpHandlers()
 

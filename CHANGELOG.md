@@ -6,6 +6,12 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 
 ### Added
 
+- Terminal HTTP/HTTPS links and OSC 8 hyperlinks can open in the system browser or Google Chrome through a validated, shell-free Electron boundary.
+- Terminal scroll speed and smooth scrolling are configurable, with Codex guidance for `/tui`, `--no-alt-screen`, `/raw`, and `Alt-R`.
+- Terminal titles, OSC 9 notifications, and bells now drive lightweight activity indicators in tabs, previews, and the status bar; optional desktop notifications remain off by default and are rate-limited.
+- A collapsible, read-only Git panel shows the active repository, branch, changed files, and staged/unstaged short diff statistics for local and remote SSH sessions.
+- New browser and Git platform adapters isolate macOS-specific execution and include direct Windows Chrome discovery without invoking a command shell.
+
 - Recently authenticated SSH connections can remain reusable for ten minutes after a clean session exit through a private OpenSSH control socket, reducing repeat prompts without storing passwords.
 - Visible, focused terminal sessions now support secure OSC 52 clipboard writes for fullscreen tools such as Codex, with strict Base64/UTF-8 validation, a 1 MiB limit, and no clipboard-read support.
 - The River Plate title-bar banner can now be resized vertically from its lower edge, remembers its height locally, supports keyboard resizing, and resets to 72 px on double-click.

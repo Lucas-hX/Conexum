@@ -75,6 +75,24 @@ export type RemoteTextFile = {
   fingerprint: string
 }
 
+export type BrowserPreference = 'default' | 'chrome'
+
+export type GitDiffStat = { files: number; insertions: number; deletions: number }
+
+export type GitFileChange = {
+  path: string
+  originalPath: string | null
+  code: string
+  staged: boolean
+  unstaged: boolean
+  untracked: boolean
+  conflicted: boolean
+}
+
+export type GitSummary =
+  | { available: false; reason: 'session-unavailable' | 'directory-unavailable' | 'not-repository' | 'git-unavailable' }
+  | { available: true; root: string; branch: string; files: GitFileChange[]; truncated: boolean; unstaged: GitDiffStat; staged: GitDiffStat; updatedAt: number }
+
 declare global {
   interface Window {
     conexum?: {
@@ -94,6 +112,15 @@ declare global {
       local: {
         getMachineInfo(): Promise<{ name: string; username: string; homeDirectory: string }>
         getCurrentDirectory(sessionId: string): Promise<string | null>
+      }
+      external: {
+        openLink(url: string, browser: BrowserPreference): Promise<boolean>
+      }
+      system: {
+        notify(sessionId: string, title: string, body: string): Promise<boolean>
+      }
+      git: {
+        summary(sessionId: string, directory: string | null): Promise<GitSummary>
       }
       profiles: {
         chooseIdentityFile(): Promise<string | null>
