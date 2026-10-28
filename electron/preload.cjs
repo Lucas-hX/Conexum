@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('conexum', {
     getTelemetry: (sessionId) => ipcRenderer.invoke('ssh:telemetry', { sessionId }),
     getDiagnostics: (sessionId) => ipcRenderer.invoke('ssh:diagnostics', { sessionId }),
     copyDiagnostics: (sessionId) => ipcRenderer.invoke('ssh:copy-diagnostics', { sessionId }),
+    writeOsc52Clipboard: (sessionId, payload) => ipcRenderer.invoke('ssh:write-osc52-clipboard', { sessionId, payload }),
     onData: (callback) => {
       const listener = (_event, payload) => callback(payload)
       ipcRenderer.on('ssh:data', listener)

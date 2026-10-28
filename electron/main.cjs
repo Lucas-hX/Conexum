@@ -37,6 +37,7 @@ const {
 } = require('./sftp-core.cjs')
 const { createBackup, parseBackup } = require('./profile-core.cjs')
 const { machineInfo, parseLsofCwd, validateLocalConnection } = require('./local-core.cjs')
+const { decodeOsc52Clipboard } = require('./clipboard-core.cjs')
 
 app.setName('Conexum')
 
@@ -815,6 +816,15 @@ function registerSshHandlers() {
       `Exit code: ${item.exitCode ?? '—'}`,
       `Last error: ${item.lastError || 'None'}`,
     ].join('\n'))
+    return true
+  })
+
+  ipcMain.handle('ssh:write-osc52-clipboard', (event, { sessionId, payload } = {}) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender)
+    if (event.sender.id !== mainWindowWebContentsId || !senderWindow?.isFocused() || !isValidSessionId(sessionId) || !sessions.has(sessionId)) return false
+    const text = decodeOsc52Clipboard(payload)
+    if (text === null) return false
+    clipboard.writeText(text)
     return true
   })
 }
