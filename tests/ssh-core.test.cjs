@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const {
   CONTROL_PERSIST_SECONDS,
   SessionRegistry,
+  buildControlCommandSshArgs,
   buildTelemetrySshArgs,
   buildSshArgs,
   calculateTelemetry,
@@ -138,6 +139,17 @@ test('builds read-only telemetry arguments over the existing control socket', ()
   assert.equal(args.at(-2), 'deploy@example.com')
   assert.match(args.at(-1), /\/proc\/stat/)
   assert.throws(() => buildTelemetrySshArgs({}, 'relative/socket'), /multiplexing path is invalid/i)
+})
+
+test('builds a bounded command over the existing control socket', () => {
+  const args = buildControlCommandSshArgs({
+    host: 'example.com', port: 22, username: 'deploy', identityFile: '', configFile: '', sshAlias: '',
+  }, '/tmp/conexum-control', "git -C '/srv/app' status --porcelain=v1 -z")
+
+  assert.ok(args.includes('BatchMode=yes'))
+  assert.equal(args.at(-2), 'deploy@example.com')
+  assert.equal(args.at(-1), "git -C '/srv/app' status --porcelain=v1 -z")
+  assert.throws(() => buildControlCommandSshArgs({}, '/tmp/conexum-control', 'bad\0command'), /not valid/i)
 })
 
 test('parses remote telemetry and calculates deltas without exposing raw output', () => {

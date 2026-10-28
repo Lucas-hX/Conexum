@@ -184,6 +184,26 @@ function buildTelemetrySshArgs(connection, controlPath) {
   return args
 }
 
+function buildControlCommandSshArgs(connection, controlPath, remoteCommand) {
+  validateControlPath(controlPath)
+  if (typeof remoteCommand !== 'string' || remoteCommand.length < 1 || remoteCommand.length > 16_384 || remoteCommand.includes('\0')) {
+    throw new Error('The remote command is not valid.')
+  }
+
+  const args = [
+    '-T',
+    '-S', controlPath,
+    '-o', 'BatchMode=yes',
+    '-o', 'ConnectTimeout=5',
+    '-o', 'ControlMaster=no',
+    '-o', 'ClearAllForwardings=yes',
+    '-o', 'RemoteCommand=none',
+  ]
+  args.push(appendConnectionArgs(args, connection))
+  args.push(remoteCommand)
+  return args
+}
+
 function parseTelemetrySample(output) {
   if (typeof output !== 'string' || output.length > 32_000) return null
   const values = new Map()
@@ -311,6 +331,7 @@ class SessionRegistry {
 module.exports = {
   CONTROL_PERSIST_SECONDS,
   SessionRegistry,
+  buildControlCommandSshArgs,
   buildTelemetrySshArgs,
   buildSshArgs,
   calculateTelemetry,

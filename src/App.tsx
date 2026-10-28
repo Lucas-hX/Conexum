@@ -2,7 +2,9 @@ import { forwardRef, lazy, Suspense, useCallback, useEffect, useImperativeHandle
 import type { CSSProperties, ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SftpPanel } from './SftpPanel'
+import { GitPanel } from './GitPanel'
 import { ShellIntegrationHelp } from './ShellIntegrationHelp'
 import type { EditorRequest } from './EditorApp'
 import {
@@ -15,6 +17,9 @@ import {
   FileUp,
   Folder,
   FolderOpen,
+  Bell,
+  ExternalLink,
+  GitBranch,
   Languages,
   Import,
   KeyRound,
@@ -39,7 +44,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
+import type { BrowserPreference, ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
 import { useI18n } from './i18n'
 import { themes, useTheme } from './theme'
 
@@ -59,6 +64,13 @@ type SshSessionTab = {
   currentDirectory: string | null
   telemetry: RemoteTelemetry | null
   telemetryStatus: 'idle' | 'loading' | 'available' | 'unavailable'
+  activity: TerminalActivity
+}
+
+type TerminalActivity = {
+  kind: 'idle' | 'working' | 'attention' | 'complete'
+  label: string
+  updatedAt: number
 }
 
 type TerminalHandle = {
@@ -72,6 +84,7 @@ const SIDEBAR_WIDTH_KEY = 'conexum.sidebarWidth.v1'
 const RIVER_BANNER_HEIGHT_KEY = 'conexum.riverBannerHeight.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const TERMINAL_FONT_SETTINGS_KEY = 'conexum.terminalFontSettings.v1'
+const TERMINAL_BEHAVIOR_SETTINGS_KEY = 'conexum.terminalBehaviorSettings.v1'
 const TERMINAL_FONT_PRESETS = [
   { id: 'jetbrains-mono', label: 'JetBrains Mono', family: '"JetBrains Mono", "JetBrainsMono NF", "SFMono-Regular", Menlo, monospace' },
   { id: 'jetbrains-mono-nerd', label: 'JetBrains Mono Nerd Font', family: '"JetBrainsMono NFM", "JetBrainsMono NF", "JetBrains Mono", "SFMono-Regular", Menlo, monospace' },
@@ -83,6 +96,18 @@ const TERMINAL_FONT_PRESETS = [
 type TerminalFontId = typeof TERMINAL_FONT_PRESETS[number]['id']
 type TerminalFontSettings = { family: TerminalFontId; size: number }
 const DEFAULT_TERMINAL_FONT_SETTINGS: TerminalFontSettings = { family: 'sf-mono', size: 14 }
+type TerminalBehaviorSettings = {
+  browser: BrowserPreference
+  scrollSensitivity: number
+  smoothScrollDuration: number
+  desktopNotifications: boolean
+}
+const DEFAULT_TERMINAL_BEHAVIOR_SETTINGS: TerminalBehaviorSettings = {
+  browser: 'default',
+  scrollSensitivity: 1,
+  smoothScrollDuration: 80,
+  desktopNotifications: false,
+}
 const BRAND_ICON = './brand/conexum-icon.png'
 const BRAND_BANNER = './brand/conexum-welcome-banner.png'
 const THEME_912_BANNER = new URL('./brand/theme-river-plate-banner-v2.jpg', document.baseURI).href
@@ -167,14 +192,36 @@ function loadTerminalFontSettings(): TerminalFontSettings {
   }
 }
 
+function loadTerminalBehaviorSettings(): TerminalBehaviorSettings {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TERMINAL_BEHAVIOR_SETTINGS_KEY) ?? 'null')
+    const sensitivity = Number(stored?.scrollSensitivity)
+    const duration = Number(stored?.smoothScrollDuration)
+    return {
+      browser: stored?.browser === 'chrome' ? 'chrome' : 'default',
+      scrollSensitivity: [0.5, 1, 2, 3].includes(sensitivity) ? sensitivity : DEFAULT_TERMINAL_BEHAVIOR_SETTINGS.scrollSensitivity,
+      smoothScrollDuration: [0, 80, 150].includes(duration) ? duration : DEFAULT_TERMINAL_BEHAVIOR_SETTINGS.smoothScrollDuration,
+      desktopNotifications: stored?.desktopNotifications === true,
+    }
+  } catch {
+    return DEFAULT_TERMINAL_BEHAVIOR_SETTINGS
+  }
+}
+
+function sanitizeTerminalActivity(value: string) {
+  return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').replace(/^\d+;/, '').trim().slice(0, 300)
+}
+
 const TerminalView = forwardRef<TerminalHandle, {
   sessionId: string
   fontFamily: string
   fontSize: number
+  behavior: TerminalBehaviorSettings
   onStatusChange(status: SessionStatus): void
   onDirectoryChange(directory: string): void
+  onActivity(activity: TerminalActivity): void
   onIdentityNeeded(profile: ConnectionProfile): void
-}>(function TerminalView({ sessionId, fontFamily, fontSize, onStatusChange, onDirectoryChange, onIdentityNeeded }, ref) {
+}>(function TerminalView({ sessionId, fontFamily, fontSize, behavior, onStatusChange, onDirectoryChange, onActivity, onIdentityNeeded }, ref) {
   const { text, error: localizeError } = useI18n()
   const { theme } = useTheme()
   const hostRef = useRef<HTMLDivElement>(null)
@@ -184,6 +231,10 @@ const TerminalView = forwardRef<TerminalHandle, {
   const activeProfileRef = useRef<ConnectionProfile | null>(null)
   const authenticationFailedRef = useRef(false)
   const connectInFlightRef = useRef(false)
+  const behaviorRef = useRef(behavior)
+  const activityTimerRef = useRef<number | null>(null)
+
+  useEffect(() => { behaviorRef.current = behavior }, [behavior])
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -195,10 +246,23 @@ const TerminalView = forwardRef<TerminalHandle, {
       fontSize,
       lineHeight: 1.25,
       scrollback: 10_000,
+      scrollSensitivity: behaviorRef.current.scrollSensitivity,
+      fastScrollSensitivity: 3,
+      smoothScrollDuration: behaviorRef.current.smoothScrollDuration,
+      macOptionClickForcesSelection: true,
       theme: theme.terminal,
     })
     const fitAddon = new FitAddon()
+    const openExternalLink = (uri: string) => {
+      void window.conexum?.external.openLink(uri, behaviorRef.current.browser)
+    }
+    const webLinksAddon = new WebLinksAddon((_event, uri) => openExternalLink(uri))
     terminal.loadAddon(fitAddon)
+    terminal.loadAddon(webLinksAddon)
+    terminal.options.linkHandler = {
+      allowNonHttpProtocols: false,
+      activate: (_event, uri) => openExternalLink(uri),
+    }
     terminal.open(hostRef.current)
     terminalRef.current = terminal
     fitRef.current = fitAddon
@@ -224,6 +288,30 @@ const TerminalView = forwardRef<TerminalHandle, {
       }
       return true
     })
+    let lastWorkingActivityAt = 0
+    const publishActivity = (kind: TerminalActivity['kind'], rawLabel: string, notify = false) => {
+      const label = sanitizeTerminalActivity(rawLabel)
+      if (!label) return
+      const now = Date.now()
+      if (kind === 'working' && now - lastWorkingActivityAt < 350) return
+      if (kind === 'working') lastWorkingActivityAt = now
+      onActivity({ kind, label, updatedAt: now })
+      if (activityTimerRef.current !== null) window.clearTimeout(activityTimerRef.current)
+      if (kind === 'working') {
+        activityTimerRef.current = window.setTimeout(() => onActivity({ kind: 'idle', label, updatedAt: Date.now() }), 1_800)
+      }
+      if (notify && behaviorRef.current.desktopNotifications) {
+        void window.conexum?.system.notify(sessionId, activeProfileRef.current?.name ?? 'Conexum', label)
+      }
+    }
+    const notificationDisposable = terminal.parser.registerOscHandler(9, (value) => {
+      const label = sanitizeTerminalActivity(value)
+      const attention = /approval|permission|required|input|confirm/i.test(label)
+      publishActivity(attention ? 'attention' : 'complete', label, true)
+      return true
+    })
+    const titleDisposable = terminal.onTitleChange((title) => publishActivity('working', title))
+    const bellDisposable = terminal.onBell(() => publishActivity('attention', text('Terminal requested attention.', 'La terminal solicitó atención.'), true))
     const removeDataListener = window.conexum?.ssh.onData(({ sessionId, data }) => {
       if (sessionId !== sessionIdRef.current) return
       terminal.write(data)
@@ -254,6 +342,10 @@ const TerminalView = forwardRef<TerminalHandle, {
       resizeDisposable.dispose()
       directoryDisposable.dispose()
       clipboardDisposable.dispose()
+      notificationDisposable.dispose()
+      titleDisposable.dispose()
+      bellDisposable.dispose()
+      if (activityTimerRef.current !== null) window.clearTimeout(activityTimerRef.current)
       observer.disconnect()
       terminal.dispose()
       terminalRef.current = null
@@ -271,6 +363,12 @@ const TerminalView = forwardRef<TerminalHandle, {
     terminalRef.current.options.fontSize = fontSize
     fitRef.current?.fit()
   }, [fontFamily, fontSize])
+
+  useEffect(() => {
+    if (!terminalRef.current) return
+    terminalRef.current.options.scrollSensitivity = behavior.scrollSensitivity
+    terminalRef.current.options.smoothScrollDuration = behavior.smoothScrollDuration
+  }, [behavior.scrollSensitivity, behavior.smoothScrollDuration])
 
   useImperativeHandle(ref, () => ({
     async connect(profile, options = {}) {
@@ -331,18 +429,21 @@ const TerminalView = forwardRef<TerminalHandle, {
   return <div className="terminal-host" ref={hostRef} aria-label="Terminal" />
 })
 
-function ManagedTerminalSession({ session, fontFamily, fontSize, onHandle, onStatusChange, onDirectoryChange, onIdentityNeeded }: {
+function ManagedTerminalSession({ session, fontFamily, fontSize, behavior, onHandle, onStatusChange, onDirectoryChange, onActivity, onIdentityNeeded }: {
   session: SshSessionTab
   fontFamily: string
   fontSize: number
+  behavior: TerminalBehaviorSettings
   onHandle(sessionId: string, handle: TerminalHandle | null): void
   onStatusChange(sessionId: string, status: SessionStatus): void
   onDirectoryChange(sessionId: string, directory: string): void
+  onActivity(sessionId: string, activity: TerminalActivity): void
   onIdentityNeeded(profile: ConnectionProfile): void
 }) {
   const terminalRef = useRef<TerminalHandle>(null)
   const handleStatusChange = useCallback((status: SessionStatus) => onStatusChange(session.id, status), [onStatusChange, session.id])
   const handleDirectoryChange = useCallback((directory: string) => onDirectoryChange(session.id, directory), [onDirectoryChange, session.id])
+  const handleActivity = useCallback((activity: TerminalActivity) => onActivity(session.id, activity), [onActivity, session.id])
   const handleIdentityNeeded = useCallback((profile: ConnectionProfile) => onIdentityNeeded(profile), [onIdentityNeeded])
 
   useEffect(() => {
@@ -353,7 +454,7 @@ function ManagedTerminalSession({ session, fontFamily, fontSize, onHandle, onSta
     return () => onHandle(session.id, null)
   }, [])
 
-  return <TerminalView ref={terminalRef} sessionId={session.id} fontFamily={fontFamily} fontSize={fontSize} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onIdentityNeeded={handleIdentityNeeded} />
+  return <TerminalView ref={terminalRef} sessionId={session.id} fontFamily={fontFamily} fontSize={fontSize} behavior={behavior} onStatusChange={handleStatusChange} onDirectoryChange={handleDirectoryChange} onActivity={handleActivity} onIdentityNeeded={handleIdentityNeeded} />
 }
 
 function ToolButton({ label, icon, active, disabled, accent, onClick }: {
@@ -539,6 +640,7 @@ export function App() {
   }
   const [profiles, setProfiles] = useState<ConnectionProfile[]>(loadProfiles)
   const [terminalFontSettings, setTerminalFontSettings] = useState<TerminalFontSettings>(loadTerminalFontSettings)
+  const [terminalBehaviorSettings, setTerminalBehaviorSettings] = useState<TerminalBehaviorSettings>(loadTerminalBehaviorSettings)
   const [localProfile, setLocalProfile] = useState<ConnectionProfile>(() => ({
     ...DEFAULT_LOCAL_PROFILE,
     name: text('Local terminal', 'Terminal local'),
@@ -588,6 +690,7 @@ export function App() {
   const [sessionPreview, setSessionPreview] = useState<SessionPreview | null>(null)
   const [draggedSessionId, setDraggedSessionId] = useState<string | null>(null)
   const [tabDropTarget, setTabDropTarget] = useState<TabDropTarget | null>(null)
+  const [gitPanelOpen, setGitPanelOpen] = useState(false)
   const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map())
   const latestDirectories = useRef<Map<string, string>>(new Map())
   const sessionTabsRef = useRef<HTMLDivElement>(null)
@@ -672,6 +775,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(TERMINAL_FONT_SETTINGS_KEY, JSON.stringify(terminalFontSettings))
   }, [terminalFontSettings])
+
+  useEffect(() => {
+    localStorage.setItem(TERMINAL_BEHAVIOR_SETTINGS_KEY, JSON.stringify(terminalBehaviorSettings))
+  }, [terminalBehaviorSettings])
 
   useEffect(() => {
     if (!contextMenu) return
@@ -853,6 +960,12 @@ export function App() {
     setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, currentDirectory } : session))
   }, [])
 
+  const updateSessionActivity = useCallback((sessionId: string, activity: TerminalActivity) => {
+    setSessions((current) => current.map((session) => session.id === sessionId && (session.activity.kind !== activity.kind || session.activity.label !== activity.label)
+      ? { ...session, activity }
+      : session))
+  }, [])
+
   const saveProfile = (profile: ConnectionProfile) => {
     setProfiles((current) => {
       const isNewGroup = !current.some((item) => item.group === profile.group)
@@ -878,6 +991,7 @@ export function App() {
       currentDirectory: profile.kind === 'local' ? localHomeDirectory || null : null,
       telemetry: null,
       telemetryStatus: 'idle',
+      activity: { kind: 'idle', label: text('Terminal ready', 'Terminal lista'), updatedAt: Date.now() },
     }])
     setActiveSessionId(sessionId)
     setSelectedId(profile.id)
@@ -1332,7 +1446,7 @@ export function App() {
                   onMouseLeave={hideSessionPreview}
                 >
                   <button className="session-tab-main" role="tab" aria-selected={active} onPointerDown={(event) => startTabPointerDrag(event, session.id)} onPointerMove={moveTabPointerDrag} onPointerUp={endTabPointerDrag} onPointerCancel={cancelTabPointerDrag} onClick={() => { if (suppressedTabClickRef.current === session.id) { suppressedTabClickRef.current = null; return }; activateSession(session) }} onDoubleClick={(event) => { event.stopPropagation(); hideSessionPreview(); closeSessionTab(session) }} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
-                    {session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
+                    {session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`terminal-activity ${session.activity.kind}`} title={session.activity.label} /><i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
                   {(session.status === 'disconnected' || session.status === 'error') && <button className="session-tab-reconnect" onClick={(event) => { event.stopPropagation(); hideSessionPreview(); reconnectSession(session) }} aria-label={text(`Reconnect ${session.profile.name}`, `Reconectar ${session.profile.name}`)} title={text('Reconnect session', 'Reconectar sesión')}>R</button>}
                   <button className="session-tab-close" onClick={() => { hideSessionPreview(); closeSessionTab(session) }} aria-label={text(`Close ${session.profile.name}`, `Cerrar ${session.profile.name}`)} title={text('Close session', 'Cerrar sesión')}><X size={12} /></button>
@@ -1381,6 +1495,12 @@ export function App() {
               </select></label>
               <p className="settings-font-note">{text('Uses the selected font when installed; otherwise falls back to SF Mono.', 'Usa la fuente elegida si está instalada; si no, usa SF Mono.')}</p>
               <i />
+              <label className="settings-terminal"><ExternalLink size={14} /><span><strong>{text('Open links with', 'Abrir enlaces con')}</strong><small>{text('HTTP and HTTPS only', 'Sólo HTTP y HTTPS')}</small></span><select value={terminalBehaviorSettings.browser} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, browser: event.target.value as BrowserPreference }))} aria-label={text('Browser for terminal links', 'Navegador para enlaces de terminal')}><option value="default">{text('Default browser', 'Navegador predeterminado')}</option><option value="chrome">Google Chrome</option></select></label>
+              <label className="settings-terminal"><SquareTerminal size={14} /><span><strong>{text('Scroll speed', 'Velocidad de scroll')}</strong><small>{text('Trackpad and mouse wheel', 'Trackpad y rueda del mouse')}</small></span><select value={terminalBehaviorSettings.scrollSensitivity} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, scrollSensitivity: Number(event.target.value) }))}><option value={0.5}>{text('Precise', 'Precisa')}</option><option value={1}>{text('Normal', 'Normal')}</option><option value={2}>{text('Fast', 'Rápida')}</option><option value={3}>{text('Very fast', 'Muy rápida')}</option></select></label>
+              <label className="settings-terminal"><span className="settings-type-spacer" aria-hidden="true" /><span><strong>{text('Smooth scroll', 'Scroll suave')}</strong><small>{text('Animation duration', 'Duración de la animación')}</small></span><select value={terminalBehaviorSettings.smoothScrollDuration} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, smoothScrollDuration: Number(event.target.value) }))}><option value={0}>{text('Off', 'Desactivado')}</option><option value={80}>{text('Balanced', 'Equilibrado')}</option><option value={150}>{text('Soft', 'Suave')}</option></select></label>
+              <label className="settings-notification"><Bell size={14} /><span><strong>{text('Desktop notifications', 'Notificaciones del escritorio')}</strong><small>{text('When the terminal requests attention', 'Cuando la terminal solicita atención')}</small></span><input type="checkbox" checked={terminalBehaviorSettings.desktopNotifications} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, desktopNotifications: event.target.checked }))} /></label>
+              <p className="settings-codex-note">{text('Codex tip: use /tui → scrollback or start with codex --no-alt-screen. Press Alt-R or /raw for copy-friendly output.', 'Consejo Codex: usá /tui → scrollback o iniciá con codex --no-alt-screen. Presioná Alt-R o /raw para copiar mejor.')}</p>
+              <i />
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
               <i />
@@ -1407,6 +1527,7 @@ export function App() {
       {previewedSession && sessionPreview && <div className="session-preview-card" style={{ left: sessionPreview.left, top: sessionPreview.top }}>
         <div><span className={`status-dot ${previewedSession.status === 'connected' ? 'online' : ''}`} /><strong>{previewedSession.profile.name}</strong><small>{statusLabels[previewedSession.status]}</small></div>
         <p>{previewedSession.profile.kind === 'local' ? previewedSession.profile.group : `${previewedSession.profile.username}@${previewedSession.profile.host}:${previewedSession.profile.port}`}</p>
+        <p className={`preview-activity ${previewedSession.activity.kind}`}><i />{previewedSession.activity.label}</p>
         <footer><span>{previewedSession.currentDirectory ? compactDirectory(previewedSession.currentDirectory, previewedSession.profile.username) : text('Path unavailable', 'Ruta no disponible')}</span>{previewedSession.telemetry && <b>CPU {previewedSession.telemetry.cpuPercent ?? '—'}% · RAM {previewedSession.telemetry.memoryPercent}%</b>}</footer>
       </div>}
 
@@ -1427,7 +1548,7 @@ export function App() {
                 const splitVisible = mainView === 'terminal' && splitSessionIds.has(session.id)
                 const singleVisible = mainView === 'terminal' && !splitMode && activeSessionId === session.id
                 return <div key={session.id} className={`terminal-panel terminal-layer ${splitVisible || singleVisible ? 'visible' : ''} ${splitMode ? (splitVisible ? 'split-pane' : 'split-hidden') : ''}`} onMouseDown={() => setActiveSessionId(session.id)}>
-                  <ManagedTerminalSession session={session} fontFamily={selectedFont.family} fontSize={terminalFontSettings.size} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onIdentityNeeded={handleIdentityNeeded} />
+                  <ManagedTerminalSession session={session} fontFamily={selectedFont.family} fontSize={terminalFontSettings.size} behavior={terminalBehaviorSettings} onHandle={registerTerminalHandle} onStatusChange={updateSessionStatus} onDirectoryChange={updateSessionDirectory} onActivity={updateSessionActivity} onIdentityNeeded={handleIdentityNeeded} />
                   {(session.status === 'disconnected' || session.status === 'error') && (
                     <button className="terminal-reconnect" onClick={(event) => { event.stopPropagation(); reconnectSession(session) }}>
                       <RefreshCw size={13} />{text('Reconnect', 'Reconectar')}
@@ -1448,6 +1569,14 @@ export function App() {
             {mainView === 'terminal' && activeTool === 'editor' && <button className="editor-resizer" aria-label={text('Resize editor', 'Cambiar tamaño del editor')} onPointerDown={startEditorResize} onDoubleClick={() => { setEditorWidth(58); setEditorHeight(63) }} />}
           </div>
 
+          {gitPanelOpen && mainView === 'terminal' && activeSession?.status === 'connected' && <GitPanel
+            key={activeSession.id}
+            sessionId={activeSession.id}
+            directory={directoryForSession(activeSession)}
+            profileName={activeSession.profile.name}
+            onClose={() => setGitPanelOpen(false)}
+          />}
+
           <footer className="statusbar">
             <div className="status-left">
               <span className={`status-dot ${activeSessionCount > 0 ? 'online' : ''}`} />
@@ -1459,9 +1588,11 @@ export function App() {
                   ? <button className="session-directory unavailable directory-help-trigger" title={text('Enable remote directory tracking (optional)', 'Activar seguimiento de la carpeta remota (opcional)')} onClick={() => setDirectoryHelp(activeSession.id)}>{text('Path —', 'Ruta —')}</button>
                   : <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? text('Local directory unavailable', 'Directorio local no disponible')}>{activeDirectory ?? text('Path —', 'Ruta —')}</span>
               )}
+              <button className={`status-git-button ${gitPanelOpen ? 'active' : ''}`} disabled={mainView !== 'terminal' || activeSession?.status !== 'connected'} onClick={() => setGitPanelOpen((current) => !current)} title={text('Show changed files and Git diff summary', 'Mostrar archivos modificados y resumen de Git diff')}><GitBranch size={12} />Git</button>
             </div>
             <div className={`status-right ${telemetryStale ? 'stale' : ''}`}>
               {themeId === '912' && <img className="theme-912-emblem" src={THEME_912_EMBLEM} alt="" aria-hidden="true" />}
+              {mainView === 'terminal' && activeSession && <span className={`status-activity ${activeSession.activity.kind}`} title={activeSession.activity.label}><i />{activeSession.activity.label}</span>}
               {mainView === 'terminal' && activeSession?.status === 'connected' && activeSession.profile.kind !== 'local' && (
                 <>
                   <span title={text('Approximate server CPU usage', 'Uso aproximado de CPU del servidor')}>CPU {activeSession.telemetry?.cpuPercent ?? '—'}{activeSession.telemetry?.cpuPercent !== null && activeSession.telemetry?.cpuPercent !== undefined ? '%' : ''}</span>
