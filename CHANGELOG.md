@@ -6,6 +6,7 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 
 ### Added
 
+- Recently authenticated SSH connections can remain reusable for ten minutes after a clean session exit through a private OpenSSH control socket, reducing repeat prompts without storing passwords.
 - Visible, focused terminal sessions now support secure OSC 52 clipboard writes for fullscreen tools such as Codex, with strict Base64/UTF-8 validation, a 1 MiB limit, and no clipboard-read support.
 - The River Plate title-bar banner can now be resized vertically from its lower edge, remembers its height locally, supports keyboard resizing, and resets to 72 px on double-click.
 - The River Plate title-bar banner now uses a sharper panoramic stadium image focused on the historic scoreboard's **RIVER** display and the surrounding flags, with a slightly taller 72 px presentation that keeps the terminal dominant.
@@ -16,6 +17,10 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 - Session tabs can be reordered with drag and drop without restarting their terminals.
 - Disconnected or failed tabs show a compact **R** action that reconnects the existing tab while preserving visible history.
 - The **River Plate** theme now loads its real Monumental photograph reliably in the packaged app, uses a more visible circular embroidered-crest medallion beside CPU/RAM, and adds restrained red, white, and black accents without reducing terminal space. Existing `912` preferences migrate without changes.
+
+### Fixed
+
+- Reconnecting a session no longer lets a delayed exit or output event from its previous PTY remove or corrupt the replacement process, and duplicate reconnect attempts are ignored while startup is in flight.
 
 ## 0.6.6 — 2026-09-20
 

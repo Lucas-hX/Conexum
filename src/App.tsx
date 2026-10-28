@@ -183,6 +183,7 @@ const TerminalView = forwardRef<TerminalHandle, {
   const sessionIdRef = useRef<string | null>(null)
   const activeProfileRef = useRef<ConnectionProfile | null>(null)
   const authenticationFailedRef = useRef(false)
+  const connectInFlightRef = useRef(false)
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -284,7 +285,8 @@ const TerminalView = forwardRef<TerminalHandle, {
         return
       }
 
-      if (sessionIdRef.current) window.conexum.ssh.disconnect(sessionIdRef.current)
+      if (sessionIdRef.current || connectInFlightRef.current) return
+      connectInFlightRef.current = true
       activeProfileRef.current = profile
       authenticationFailedRef.current = false
       if (options.preserveHistory) {
@@ -312,6 +314,8 @@ const TerminalView = forwardRef<TerminalHandle, {
         terminal.writeln(`\r\n\x1b[31m[Conexum] ${message}\x1b[0m`)
         onStatusChange('error')
         if (/archivo de identidad|identity file/i.test(message)) onIdentityNeeded(profile)
+      } finally {
+        connectInFlightRef.current = false
       }
     },
     disconnect() {

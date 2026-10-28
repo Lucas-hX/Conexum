@@ -30,6 +30,7 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Import from an SSH config file.
 - Support for username, host, port, alias, and `IdentityFile`.
 - Integration with `ssh-agent` and macOS Keychain for passphrases.
+- Reuse of a private OpenSSH control connection for up to ten minutes after a session ends cleanly, reducing repeated authentication prompts without storing passwords.
 - A collapsible, resizable sidebar that becomes a temporary overlay when hidden.
 - Individual session closing with confirmation and one-click reconnection from disconnected tabs.
 - Connection groups that can be renamed or deleted from their context menu.
@@ -209,6 +210,7 @@ Right-click a connection to open a new session, duplicate it, or edit its settin
 ## Security
 
 - Conexum does not store SSH passwords.
+- Recently authenticated connections may be reused for up to ten minutes through an OpenSSH control socket inside a private per-app directory. A lost network connection or expired control connection requires authentication again.
 - Private keys are never copied; only the `IdentityFile` path is retained.
 - `ssh-agent` and macOS Keychain can manage passphrases.
 - Password prompts, new fingerprints, and OpenSSH warnings appear directly in the terminal.
