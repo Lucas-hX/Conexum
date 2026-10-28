@@ -2,6 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
+  CONTROL_PERSIST_SECONDS,
   SessionRegistry,
   buildTelemetrySshArgs,
   buildSshArgs,
@@ -103,7 +104,8 @@ test('adds a shared control socket to interactive SSH without changing the desti
   assert.equal(args.at(-1), 'deploy@example.com')
   assert.ok(args.includes('/tmp/conexum-control'))
   assert.ok(args.includes('ControlMaster=auto'))
-  assert.ok(args.includes('ControlPersist=60'))
+  assert.ok(args.includes(`ControlPersist=${CONTROL_PERSIST_SECONDS}`))
+  assert.equal(CONTROL_PERSIST_SECONDS, 600)
 })
 
 test('rejects control socket paths that leave no room for the OpenSSH temporary suffix', () => {
@@ -238,6 +240,20 @@ test('allows a failed or closed session to reconnect with the same session id', 
   assert.equal(registry.size, 1)
   assert.equal(registry.get('reconnect-session'), reconnectedProcess)
   assert.equal(failedProcess.kills, 0)
+})
+
+test('ignores a stale exit after a replacement process starts with the same session id', () => {
+  const registry = new SessionRegistry()
+  const previousProcess = { kills: 0, kill() { this.kills += 1 } }
+  const replacementProcess = { kills: 0, kill() { this.kills += 1 } }
+
+  registry.add('reconnect-session', previousProcess)
+  registry.close('reconnect-session')
+  registry.add('reconnect-session', replacementProcess)
+
+  assert.equal(registry.remove('reconnect-session', previousProcess), false)
+  assert.equal(registry.get('reconnect-session'), replacementProcess)
+  assert.equal(previousProcess.kills, 1)
 })
 
 test('closes every remaining session during application shutdown', () => {

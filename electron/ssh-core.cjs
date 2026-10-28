@@ -41,6 +41,7 @@ esac`
 // Keeping the configured path below this limit leaves enough room for that
 // suffix on macOS, whose Unix-domain socket paths are especially short.
 const MAX_CONTROL_PATH_BYTES = 72
+const CONTROL_PERSIST_SECONDS = 10 * 60
 
 function isSafeText(value, maxLength = 255) {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength && !/[\r\n\0]/.test(value)
@@ -157,7 +158,7 @@ function buildSshArgs(connection, options = {}) {
     args.push(
       '-S', controlPath,
       '-o', 'ControlMaster=auto',
-      '-o', 'ControlPersist=60',
+      '-o', `ControlPersist=${CONTROL_PERSIST_SECONDS}`,
     )
   }
 
@@ -273,7 +274,8 @@ class SessionRegistry {
     return this.sessions.has(sessionId)
   }
 
-  remove(sessionId) {
+  remove(sessionId, expectedProcess) {
+    if (expectedProcess !== undefined && this.sessions.get(sessionId) !== expectedProcess) return false
     return this.sessions.delete(sessionId)
   }
 
@@ -307,6 +309,7 @@ class SessionRegistry {
 }
 
 module.exports = {
+  CONTROL_PERSIST_SECONDS,
   SessionRegistry,
   buildTelemetrySshArgs,
   buildSshArgs,

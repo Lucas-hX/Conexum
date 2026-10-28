@@ -684,9 +684,11 @@ function registerSshHandlers() {
       })
       sessions.add(local.sessionId, shellProcess)
       localSessions.set(local.sessionId, { pid: shellProcess.pid })
-      shellProcess.onData((data) => sendToRenderer(sender, 'ssh:data', { sessionId: local.sessionId, data }))
+      shellProcess.onData((data) => {
+        if (sessions.get(local.sessionId) === shellProcess) sendToRenderer(sender, 'ssh:data', { sessionId: local.sessionId, data })
+      })
       shellProcess.onExit(({ exitCode, signal }) => {
-        sessions.remove(local.sessionId)
+        if (!sessions.remove(local.sessionId, shellProcess)) return
         localSessions.delete(local.sessionId)
         sendToRenderer(sender, 'ssh:exit', { sessionId: local.sessionId, exitCode, signal })
       })
@@ -733,13 +735,13 @@ function registerSshHandlers() {
     })
 
     sshProcess.onData((data) => {
-      if (!sender.isDestroyed()) {
+      if (sessions.get(connection.sessionId) === sshProcess && !sender.isDestroyed()) {
         sender.send('ssh:data', { sessionId: connection.sessionId, data })
       }
     })
 
     sshProcess.onExit(({ exitCode, signal }) => {
-      sessions.remove(connection.sessionId)
+      if (!sessions.remove(connection.sessionId, sshProcess)) return
       sessionConnections.delete(connection.sessionId)
       cancelSessionTransfers(connection.sessionId)
       const diagnostic = sessionDiagnostics.get(connection.sessionId)
