@@ -45,6 +45,7 @@ import {
   X,
 } from 'lucide-react'
 import type { BrowserPreference, ConnectionProfile, RemoteTelemetry, SshDiagnostics } from './conexum'
+import { buildFolderTree, inFolder, mergeMRemoteProfiles, profileFolders, renameProfileFolder, type ProfileFolder } from './profile-folders'
 import { useI18n } from './i18n'
 import { themes, useTheme } from './theme'
 
@@ -55,7 +56,7 @@ type SplitMode = 0 | 2 | 4
 type ProfileModalMode = 'create' | 'edit' | 'duplicate'
 type ContextMenuState =
   | { x: number; y: number; kind: 'profile'; profileId: string }
-  | { x: number; y: number; kind: 'group'; group: string }
+  | { x: number; y: number; kind: 'group'; path: string[] }
 
 type SshSessionTab = {
   id: string
@@ -583,10 +584,13 @@ function ConnectionModal({ profile, mode, identityRequired, onClose, onSave }: {
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     if (!name.trim() || !host.trim() || !username.trim()) return
+    const groupName = group.trim() || text('My servers', 'Mis servidores')
+    const folderPath = profile && groupName === profile.group ? profileFolders(profile) : groupName.split(' / ').map((part) => part.trim()).filter(Boolean)
     onSave({
       id: profile?.id ?? crypto.randomUUID(),
       name: name.trim(),
-      group: group.trim() || text('My servers', 'Mis servidores'),
+      group: folderPath.join(' / '),
+      folderPath,
       host: host.trim(),
       port: Number(port),
       username: username.trim(),
@@ -692,7 +696,9 @@ export function App() {
   const [utilityPanelWidth, setUtilityPanelWidth] = useState(480)
   const [editorWidth, setEditorWidth] = useState(58)
   const [editorHeight, setEditorHeight] = useState(63)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set(loadProfiles().map((profile) => profile.group)))
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
+  const [collapsedSearchGroups, setCollapsedSearchGroups] = useState<Set<string>>(() => new Set())
+  const [renamingGroup, setRenamingGroup] = useState<{ key: string; name: string } | null>(null)
   const [localGroupCollapsed, setLocalGroupCollapsed] = useState(false)
   const [activeTool, setActiveTool] = useState<ToolPanel>(null)
   const [editorPanels, setEditorPanels] = useState<EditorPanel[]>([])
@@ -736,14 +742,8 @@ export function App() {
     return (active ? [active, ...others] : sessions).slice(0, splitMode)
   }, [activeSessionId, sessions, splitMode])
   const splitSessionIds = useMemo(() => new Set(splitSessions.map((session) => session.id)), [splitSessions])
-  const groupedProfiles = useMemo(() => {
-    const filtered = profiles.filter((profile) => profile.name.toLowerCase().includes(query.toLowerCase()))
-    const groups = new Map<string, ConnectionProfile[]>()
-    for (const profile of filtered) {
-      groups.set(profile.group, [...(groups.get(profile.group) ?? []), profile])
-    }
-    return [...groups.entries()]
-  }, [profiles, query])
+  const groupedProfiles = useMemo(() => buildFolderTree(profiles, query), [profiles, query])
+  const searchingGroups = Boolean(query.trim())
   const showLocalProfile = `${localProfile.name} ${localProfile.group}`.toLowerCase().includes(query.toLowerCase())
   const selectedFont = TERMINAL_FONT_PRESETS.find((preset) => preset.id === terminalFontSettings.family) ?? TERMINAL_FONT_PRESETS[1]
 
@@ -947,6 +947,7 @@ export function App() {
   const duplicateProfile = (profile: ConnectionProfile) => {
     setEditingProfile({
       ...profile,
+      folderPath: profileFolders(profile),
       id: crypto.randomUUID(),
       name: text(`${profile.name} copy`, `${profile.name} copia`),
     })
@@ -994,8 +995,6 @@ export function App() {
 
   const saveProfile = (profile: ConnectionProfile) => {
     setProfiles((current) => {
-      const isNewGroup = !current.some((item) => item.group === profile.group)
-      if (isNewGroup) setCollapsedGroups((groups) => new Set(groups).add(profile.group))
       return current.some((item) => item.id === profile.id)
         ? current.map((item) => item.id === profile.id ? profile : item)
         : [...current, profile]
@@ -1174,51 +1173,54 @@ export function App() {
     }
   }
 
-  const toggleGroup = (group: string) => {
-    setCollapsedGroups((current) => {
+  const toggleGroup = (key: string) => {
+    const setGroups = searchingGroups ? setCollapsedSearchGroups : setExpandedGroups
+    setGroups((current) => {
       const next = new Set(current)
-      if (next.has(group)) next.delete(group)
-      else next.add(group)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
 
-  const renameGroup = (group: string) => {
-    const value = window.prompt(text('New group name:', 'Nuevo nombre del grupo:'), group)?.trim()
-    if (!value || value === group) {
-      setContextMenu(null)
+  const renameGroup = (path: string[], input: HTMLInputElement) => {
+    const name = input.value.trim()
+    if (!name || name === path.at(-1)) { setRenamingGroup(null); return }
+    const destination = [...path.slice(0, -1), name]
+    if (profiles.some((profile) => inFolder(profileFolders(profile), destination))) {
+      input.setCustomValidity(text('A folder with that name already exists here.', 'Ya hay una carpeta con ese nombre aquí.'))
+      input.reportValidity()
       return
     }
-    if (value.length > 100 || /[\r\n\0]/.test(value)) return
-    setProfiles((current) => current.map((profile) => profile.group === group ? { ...profile, group: value } : profile))
-    setCollapsedGroups((current) => {
-      const next = new Set(current)
-      const wasCollapsed = next.delete(group)
-      if (wasCollapsed) next.add(value)
-      return next
-    })
-    setContextMenu(null)
+    setProfiles((current) => current.map((profile) => renameProfileFolder(profile, path, name)))
+    setSessions((current) => current.map((session) => session.profile.kind === 'local' ? session : { ...session, profile: renameProfileFolder(session.profile, path, name) }))
+    const renameExpanded = (keys: Set<string>) => new Set([...keys].map((key) => {
+      const parts: string[] = JSON.parse(key)
+      return inFolder(parts, path) ? JSON.stringify([...destination, ...parts.slice(path.length)]) : key
+    }))
+    setExpandedGroups(renameExpanded)
+    setCollapsedSearchGroups(renameExpanded)
+    setRenamingGroup(null)
   }
 
-  const deleteGroup = (group: string) => {
-    const groupProfiles = profiles.filter((profile) => profile.group === group)
+  const deleteGroup = (path: string[]) => {
+    const groupProfiles = profiles.filter((profile) => inFolder(profileFolders(profile), path))
     if (!groupProfiles.length) return
     const activeCount = sessions.filter((session) => groupProfiles.some((profile) => profile.id === session.profile.id)).length
     const detail = activeCount ? text(
       ` The ${activeCount} open tab${activeCount === 1 ? '' : 's'} will keep running until you close ${activeCount === 1 ? 'it' : 'them'}.`,
       ` Las ${activeCount} pestaña${activeCount === 1 ? '' : 's'} abierta${activeCount === 1 ? '' : 's'} seguirá${activeCount === 1 ? '' : 'n'} funcionando hasta que la cierres.`,
     ) : ''
-    if (!window.confirm(text(`Delete the “${group}” group and its ${groupProfiles.length} connections?${detail}`, `¿Eliminar el grupo “${group}” y sus ${groupProfiles.length} conexiones?${detail}`))) return
+    const group = path.join(' / ')
+    if (!window.confirm(text(`Delete “${group}”, its subfolders and ${groupProfiles.length} connections?${detail}`, `¿Eliminar “${group}”, sus subcarpetas y ${groupProfiles.length} conexiones?${detail}`))) return
     setProfiles((current) => {
-      const remaining = current.filter((profile) => profile.group !== group)
+      const remaining = current.filter((profile) => !inFolder(profileFolders(profile), path))
       setSelectedId((selectedProfileId) => selectedProfileId === LOCAL_PROFILE_ID || remaining.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : remaining[0]?.id ?? LOCAL_PROFILE_ID)
       return remaining
     })
-    setCollapsedGroups((current) => {
-      const next = new Set(current)
-      next.delete(group)
-      return next
-    })
+    const dropBranch = (keys: Set<string>) => new Set([...keys].filter((key) => !inFolder(JSON.parse(key), path)))
+    setExpandedGroups(dropBranch)
+    setCollapsedSearchGroups(dropBranch)
     setContextMenu(null)
   }
 
@@ -1235,11 +1237,6 @@ export function App() {
     setProfiles((current) => {
       const existing = new Set(current.map((profile) => `${profile.configFile ?? ''}:${profile.sshAlias ?? profile.id}`))
       return [...current, ...imported.filter((profile) => !existing.has(`${profile.configFile ?? ''}:${profile.sshAlias ?? profile.id}`))]
-    })
-    setCollapsedGroups((current) => {
-      const next = new Set(current)
-      for (const profile of imported) next.add(profile.group)
-      return next
     })
     setSelectedId(imported[0].id)
   }
@@ -1259,10 +1256,12 @@ export function App() {
     try {
       const imported = await window.conexum?.profiles.importBackup()
       if (!imported?.length) return
-      const signatures = new Set(profiles.map((profile) => `${profile.username}\0${profile.host}\0${profile.port}\0${profile.identityFile ?? ''}`))
+      const signatureOf = (profile: ConnectionProfile) => JSON.stringify([profileFolders(profile), profile.name, profile.username, profile.host, profile.port, profile.identityFile, profile.sshAlias, profile.configFile])
+      const signatures = new Set(profiles.map(signatureOf))
       const ids = new Set([LOCAL_PROFILE_ID, ...profiles.map((profile) => profile.id)])
       const additions = imported.flatMap((profile) => {
-        const signature = `${profile.username}\0${profile.host}\0${profile.port}\0${profile.identityFile ?? ''}`
+        if (profile.id.startsWith('mrng-') && ids.has(profile.id)) return []
+        const signature = signatureOf(profile)
         if (signatures.has(signature)) return []
         signatures.add(signature)
         const next = ids.has(profile.id) ? { ...profile, id: crypto.randomUUID() } : profile
@@ -1270,7 +1269,6 @@ export function App() {
         return [next]
       })
       setProfiles((current) => [...current, ...additions])
-      setCollapsedGroups((current) => new Set([...current, ...imported.map((profile) => profile.group)]))
       setSettingsMessage(text(`${additions.length} ${additions.length === 1 ? 'connection' : 'connections'} imported.`, `${additions.length} ${additions.length === 1 ? 'conexión importada' : 'conexiones importadas'}.`))
     } catch (backupError) {
       setSettingsMessage(backupError instanceof Error ? localizeError(backupError.message.replace(/^Error invoking remote method '[^']+':\s*/, '')) : text('Could not import the backup.', 'No se pudo importar el respaldo.'))
@@ -1282,21 +1280,23 @@ export function App() {
     try {
       const result = await window.conexum?.profiles.importMRemoteNG()
       if (!result) return
-      const ids = new Set(profiles.map((profile) => profile.id))
-      const additions = result.profiles.filter((profile) => {
-        if (ids.has(profile.id)) return false
-        ids.add(profile.id)
-        return true
-      })
-      if (additions.length) {
-        setProfiles((current) => {
-          const currentIds = new Set(current.map((profile) => profile.id))
-          return [...current, ...additions.filter((profile) => !currentIds.has(profile.id))]
-        })
-        setCollapsedGroups((current) => new Set([...current, ...additions.map((profile) => profile.group)]))
+      const merged = mergeMRemoteProfiles(profiles, result.profiles, result.legacyIds)
+      const added = merged.length - profiles.length
+      setProfiles((current) => mergeMRemoteProfiles(current, result.profiles, result.legacyIds))
+      if (result.legacyIds) {
+        const ids = new Set(merged.map((profile) => profile.id))
+        const replacements = new Map(Object.entries(result.legacyIds).filter(([, oldId]) => !ids.has(oldId)).map(([id, oldId]) => [oldId, id]))
+        if (replacements.size) {
+          setRecentIds((current) => current.map((id) => replacements.get(id) ?? id))
+          setSelectedId((id) => id && (replacements.get(id) ?? id))
+          setSessions((current) => current.map((session) => {
+            const id = replacements.get(session.profile.id)
+            return id ? { ...session, profile: { ...session.profile, id } } : session
+          }))
+        }
       }
-      const duplicates = result.profiles.length - additions.length
-      const message = [text(`${additions.length} imported.`, `${additions.length} importadas.`)]
+      const duplicates = result.profiles.length - added
+      const message = [text(`${added} imported.`, `${added} importadas.`)]
       if (duplicates) message.push(text(`${duplicates} already present.`, `${duplicates} ya existentes.`))
       if (result.unsupported) message.push(text(`${result.unsupported} use another protocol.`, `${result.unsupported} usan otro protocolo.`))
       if (result.invalid) message.push(text(`${result.invalid} have invalid SSH fields.`, `${result.invalid} tienen datos SSH inválidos.`))
@@ -1435,6 +1435,44 @@ export function App() {
     window.addEventListener('pointerup', stop)
   }
 
+  const renderFolder = (folder: ProfileFolder) => {
+    const { key, path, children, connections, count } = folder
+    const name = path[path.length - 1]
+    const indent = 12 * Math.min(path.length - 1, 8)
+    const expanded = searchingGroups ? !collapsedSearchGroups.has(key) : expandedGroups.has(key)
+    return (
+      <div className="connection-group" key={key}>
+        {renamingGroup?.key === key ? (
+          <form className="group-title folder-rename" style={{ paddingInlineStart: 8 + indent }} onSubmit={(event) => {
+            event.preventDefault()
+            renameGroup(path, event.currentTarget.elements.namedItem('folderName') as HTMLInputElement)
+          }}>
+            <Folder size={14} />
+            <input name="folderName" aria-label={text('Folder name', 'Nombre de la carpeta')} autoFocus required maxLength={200}
+              value={renamingGroup.name} onFocus={(event) => event.target.select()} onBlur={() => setRenamingGroup(null)}
+              onKeyDown={(event) => { if (event.key === 'Escape') setRenamingGroup(null) }}
+              onChange={(event) => { event.target.setCustomValidity(''); setRenamingGroup({ key, name: event.target.value }) }} />
+          </form>
+        ) : (
+          <button className="group-title" style={{ paddingInlineStart: 8 + indent }} aria-expanded={expanded}
+            onClick={() => toggleGroup(key)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', path }) }}
+            title={path.join(' / ')}>
+            <ChevronDown size={13} className={`folder-chevron ${expanded ? '' : 'collapsed'}`} /><Folder size={14} /><span>{name}</span><small>{count}</small>
+          </button>
+        )}
+        {expanded && <>
+          {[...children.values()].map(renderFolder)}
+          {connections.map((connection) => (
+            <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} style={{ paddingInlineStart: 26 + indent }}
+              onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click for actions', 'Doble clic para abrir otra sesión · Clic derecho para ver acciones')}>
+              <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label={text('Uses an SSH key', 'Usa clave SSH')} /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
+            </button>
+          ))}
+        </>}
+      </div>
+    )
+  }
+
   const connectionsSidebar = (overlay = false) => (
     <aside className={`sidebar ${overlay ? 'sidebar-overlay' : ''}`} aria-label={text('Connections', 'Conexiones')}>
       <div className="sidebar-heading">
@@ -1444,7 +1482,7 @@ export function App() {
           <button className="icon-button subtle" onClick={() => overlay ? setSidebarOverlayOpen(false) : setSidebarOpen(false)} aria-label={text('Hide connections', 'Ocultar conexiones')}><PanelLeftClose size={17} /></button>
         </div>
       </div>
-      <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={text('Search connections…', 'Buscar conexiones…')} /></label>
+      <label className="search-box"><Search size={14} /><input value={query} onChange={(e) => { setQuery(e.target.value); setCollapsedSearchGroups(new Set()) }} placeholder={text('Search connections…', 'Buscar conexiones…')} /></label>
       <div className="connection-tree">
         {showLocalProfile && <div className="connection-group local-group">
           <button className="group-title" aria-expanded={!localGroupCollapsed} onClick={() => setLocalGroupCollapsed((current) => !current)}>
@@ -1454,19 +1492,8 @@ export function App() {
             <SquareTerminal size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === LOCAL_PROFILE_ID && session.status === 'connected') ? 'online' : ''}`} /><span>{localProfile.name}</span>
           </button>}
         </div>}
-        {groupedProfiles.length === 0 && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>{text('No results', 'Sin resultados')}</strong></div>}
-        {groupedProfiles.map(([group, connections]) => (
-          <div className="connection-group" key={group}>
-            <button className="group-title" aria-expanded={!collapsedGroups.has(group)} onClick={() => toggleGroup(group)} onContextMenu={(event) => { event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'group', group }) }} title={text('Right-click to rename or delete the group', 'Clic derecho para renombrar o eliminar el grupo')}>
-              <ChevronDown size={13} className={`folder-chevron ${collapsedGroups.has(group) ? 'collapsed' : ''}`} /><Folder size={14} /><span>{group}</span><small>{connections.length}</small>
-            </button>
-            {!collapsedGroups.has(group) && connections.map((connection) => (
-              <button key={connection.id} className={`connection-row ${selectedId === connection.id ? 'selected' : ''}`} onClick={() => setSelectedId(connection.id)} onDoubleClick={() => openSession(connection)} onContextMenu={(event) => { event.preventDefault(); setSelectedId(connection.id); setContextMenu({ x: event.clientX, y: event.clientY, kind: 'profile', profileId: connection.id }) }} title={text('Double-click to open another session · Right-click for actions', 'Doble clic para abrir otra sesión · Clic derecho para ver acciones')}>
-                <Server size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === connection.id && session.status === 'connected') ? 'online' : ''}`} /><span>{connection.name}</span>{connection.identityFile || connection.sshAlias ? <KeyRound size={13} className="key-indicator" aria-label={text('Uses an SSH key', 'Usa clave SSH')} /> : selectedId === connection.id && <MoreHorizontal size={15} className="more" />}
-              </button>
-            ))}
-          </div>
-        ))}
+        {!groupedProfiles.size && !showLocalProfile && <div className="empty-connections"><Search size={22} /><strong>{text('No results', 'Sin resultados')}</strong></div>}
+        {[...groupedProfiles.values()].map(renderFolder)}
       </div>
       <div className="sidebar-actions">
         <button className="import-connections" onClick={importSshConfig} title={text('Import SSH config', 'Importar SSH config')} aria-label={text('Import SSH config', 'Importar SSH config')}><Import size={13} />{text('Import', 'Importar')}</button>
@@ -1536,8 +1563,8 @@ export function App() {
           />
           <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? text('Single view', 'Vista única') : splitMode === 2 ? text('4-pane grid', 'Cuadrícula 4') : text('Split', 'Dividir')} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <span className="toolbar-separator" aria-hidden="true" />
-          {!IS_WINDOWS && <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? text('SFTP is only available for SSH sessions', 'SFTP sólo para sesiones SSH') : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />}
-          {!IS_WINDOWS && <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? text('The remote editor is only available for SSH sessions', 'Editor remoto sólo para sesiones SSH') : text('Editor', 'Editor')} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />}
+          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? text('SFTP is only available for SSH sessions', 'SFTP sólo para sesiones SSH') : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />
+          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? text('The remote editor is only available for SSH sessions', 'Editor remoto sólo para sesiones SSH') : text('Editor', 'Editor')} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />
           <div className="settings-wrapper">
             <button className="icon-button" aria-label={text('Settings', 'Ajustes')} title={text('Settings', 'Ajustes')} aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
@@ -1673,8 +1700,8 @@ export function App() {
       })()}
       {contextMenu && contextMenu.kind === 'group' && (
         <div className="server-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button onClick={() => renameGroup(contextMenu.group)}><Pencil size={14} />{text('Rename group…', 'Renombrar grupo…')}</button>
-          <button className="danger-item" onClick={() => deleteGroup(contextMenu.group)}><Trash2 size={14} />{text('Delete group…', 'Eliminar grupo…')}</button>
+          <button onClick={() => { setRenamingGroup({ key: JSON.stringify(contextMenu.path), name: contextMenu.path.at(-1)! }); setContextMenu(null) }}><Pencil size={14} />{text('Rename group…', 'Renombrar grupo…')}</button>
+          <button className="danger-item" onClick={() => deleteGroup(contextMenu.path)}><Trash2 size={14} />{text('Delete group…', 'Eliminar grupo…')}</button>
         </div>
       )}
       {modalOpen && <ConnectionModal

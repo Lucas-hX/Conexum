@@ -3,6 +3,7 @@ export type ConnectionProfile = {
   kind?: 'ssh' | 'local'
   name: string
   group: string
+  folderPath?: string[]
   host: string
   port: number
   username: string
@@ -128,7 +129,7 @@ declare global {
         importSshConfig(): Promise<ConnectionProfile[]>
         exportBackup(profiles: ConnectionProfile[]): Promise<string | null>
         importBackup(): Promise<ConnectionProfile[]>
-        importMRemoteNG(): Promise<{ profiles: ConnectionProfile[]; unsupported: number; invalid: number; defaultedUsers: number } | null>
+        importMRemoteNG(): Promise<{ profiles: ConnectionProfile[]; unsupported: number; invalid: number; defaultedUsers: number; legacyIds?: Record<string, string> } | null>
         forgetIdentityPassphrase(filePath: string): Promise<boolean>
       }
       sftp: {

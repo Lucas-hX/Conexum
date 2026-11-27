@@ -189,6 +189,17 @@ function buildSshArgs(connection, options = {}) {
   return args
 }
 
+function buildSftpSubsystemArgs(connection) {
+  const args = [
+    '-T', '-s', '-o', 'BatchMode=no', '-o', 'ConnectTimeout=15',
+    '-o', 'NumberOfPasswordPrompts=1',
+    '-o', 'ServerAliveInterval=30', '-o', 'ServerAliveCountMax=3',
+    '-o', 'ClearAllForwardings=yes', '-o', 'RemoteCommand=none',
+  ]
+  args.push(appendConnectionArgs(args, connection), 'sftp')
+  return args
+}
+
 function buildTelemetrySshArgs(connection, controlPath) {
   validateControlPath(controlPath)
 
@@ -357,6 +368,7 @@ module.exports = {
   buildControlCommandSshArgs,
   buildTelemetrySshArgs,
   buildSshArgs,
+  buildSftpSubsystemArgs,
   calculateTelemetry,
   expandHome,
   isSafeText,

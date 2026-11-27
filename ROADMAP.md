@@ -51,7 +51,10 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Selección local con **Shift + arrastrar**, copia con **Ctrl+Shift+C** y pegado con **Ctrl+Shift+V** o **Shift+Insert** en interfaces como OpenCode.
 - Migración desde **Ajustes → Importar desde mRemoteNG**. La autenticación se realiza con una clave OpenSSH, el agente de Windows o la contraseña que se ingresa en la terminal.
 
-El explorador SFTP, el editor remoto, el panel Git, las métricas de CPU/RAM y el seguimiento de directorio local siguen disponibles en macOS. Incorporarlos en Windows requiere resolver el acceso auxiliar a las sesiones SSH y al directorio de PowerShell.
+- Árbol de carpetas y subcarpetas de mRemoteNG, también para perfiles importados con la primera versión de Windows.
+- Explorador SFTP y editor remoto con guardado mediante **Ctrl+S**. Ambos comparten una conexión de archivos por pestaña. OpenSSH puede solicitar autenticación al abrirla.
+
+El panel Git, las métricas de CPU/RAM y el seguimiento del directorio local siguen disponibles en macOS.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 

@@ -6,6 +6,8 @@ Todos los cambios relevantes de Conexum se documentan en este archivo.
 
 ### Added
 
+- Windows SSH tabs can browse and transfer files over SFTP and edit remote text with Ctrl+S. Both tools reuse an OpenSSH file connection for the tab.
+- The sidebar displays shared mRemoteNG parent folders and their subfolders. Existing imports from the first Windows preview also appear in the tree.
 - Terminal HTTP/HTTPS links and OSC 8 hyperlinks can open in the system browser or Google Chrome through a validated, shell-free Electron boundary.
 - Terminal scroll speed and smooth scrolling are configurable, with Codex guidance for `/tui`, `--no-alt-screen`, `/raw`, and `Alt-R`.
 - Terminal titles, OSC 9 notifications, and bells now drive lightweight activity indicators in tabs, previews, and the status bar; optional desktop notifications remain off by default and are rate-limited.

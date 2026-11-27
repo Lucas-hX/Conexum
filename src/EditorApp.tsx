@@ -1,14 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor'
+import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker'
+import JsonWorker from 'monaco-editor/languages/features/json/json.worker.js?worker'
+import CssWorker from 'monaco-editor/languages/features/css/css.worker.js?worker'
+import HtmlWorker from 'monaco-editor/languages/features/html/html.worker.js?worker'
+import TypeScriptWorker from 'monaco-editor/languages/features/typescript/ts.worker.js?worker'
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUpFromLine, CheckSquare2, ChevronDown, ChevronRight, File, Folder, Home, LoaderCircle, RefreshCw, Save, Square, X } from 'lucide-react'
 import type { RemoteTextFile, SftpEntry, SftpTransferProgress } from './conexum'
 import { useI18n } from './i18n'
 import { useTheme } from './theme'
+import { listRemoteDirectory } from './remote-directory'
 
+// Let Vite bundle the worker entry points and all their relative imports.
+// Electron opens the renderer from file:// in a packaged application.
+globalThis.MonacoEnvironment = {
+  getWorker(_id, label) {
+    if (label === 'json') return new JsonWorker()
+    if (['css', 'scss', 'less'].includes(label)) return new CssWorker()
+    if (['html', 'handlebars', 'razor'].includes(label)) return new HtmlWorker()
+    if (label === 'typescript' || label === 'javascript') return new TypeScriptWorker()
+    return new EditorWorker()
+  },
+}
 loader.config({ monaco })
 
 const BRAND_ICON = './brand/conexum-icon.png'
+const isWindows = window.conexum?.isWindows === true
+const shortcutModifier = isWindows ? 'Ctrl+' : '⌘'
 
 type EditorContext = {
   sessionId: string
@@ -52,6 +71,10 @@ function baseName(filePath: string) {
 
 function joinRemote(directory: string, name: string) {
   return `${directory === '/' ? '' : directory.replace(/\/+$/, '')}/${name}`
+}
+
+function modelUri(sessionId: string, path: string) {
+  return monaco.Uri.from({ scheme: 'conexum-remote', authority: sessionId, path })
 }
 
 function RemoteDirectory({ context, directory, depth, initiallyOpen = false, onOpenFile, selectedPaths, onToggleSelect }: {
@@ -120,6 +143,8 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
   const context = useMemo(() => ({ sessionId }), [sessionId])
   const [documents, setDocuments] = useState<DocumentTab[]>([])
   const documentsRef = useRef<DocumentTab[]>([])
+  const closedModels = useRef<monaco.editor.ITextModel[]>([])
+  const editorRoot = useRef<HTMLElement>(null)
   const [activePath, setActivePath] = useState<string | null>(null)
   const [loadingPath, setLoadingPath] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -133,6 +158,20 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
   const dirty = documents.some((document) => document.draft !== document.content)
   const saving = documents.some((document) => document.saving)
   documentsRef.current = documents
+
+  // Monaco shares its model registry across every mounted editor, including
+  // the hidden editors in other SSH tabs that can have the same remote path.
+  useEffect(() => {
+    for (const model of closedModels.current.splice(0)) {
+      if (!model.isDisposed()) model.dispose()
+    }
+  }, [documents])
+
+  useEffect(() => () => {
+    for (const model of monaco.editor.getModels()) {
+      if (model.uri.scheme === 'conexum-remote' && model.uri.authority === sessionId) model.dispose()
+    }
+  }, [sessionId])
 
   useEffect(() => {
     monaco.editor.defineTheme(theme.id, { ...theme.editor, inherit: true })
@@ -165,13 +204,7 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
     if (!api) return
     setError(null)
     try {
-      let result
-      try {
-        result = await api.list(nextContext.sessionId, directory ?? undefined)
-      } catch (initialError) {
-        if (!fallbackToHome || !directory) throw initialError
-        result = await api.list(nextContext.sessionId)
-      }
+      const result = await listRemoteDirectory(api, nextContext.sessionId, directory ?? undefined, fallbackToHome)
       if (requestId !== navigationId.current) return
       setRootDirectory(result.directory)
       setPathDraft(result.directory)
@@ -252,10 +285,9 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
     onStateChange(sessionId, { dirty, saving })
   }, [dirty, onStateChange, saving, sessionId])
 
-  const saveDocument = useCallback(async (documentToSave: DocumentTab) => {
-    if (!window.conexum || documentToSave.saving || documentToSave.draft === documentToSave.content) return
+  const saveDocument = useCallback(async (documentToSave: DocumentTab, savedDraft = monaco.editor.getModel(modelUri(sessionId, documentToSave.path))?.getValue() ?? documentToSave.draft) => {
+    if (!window.conexum || documentToSave.saving || savedDraft === documentToSave.content) return
     if (!connected) { setError(text('Reconnect the SSH session before saving. Your changes remain in the editor.', 'Reconectá la sesión SSH antes de guardar. Los cambios permanecen en el editor.')); return }
-    const savedDraft = documentToSave.draft
     setDocuments((current) => current.map((document) => document.path === documentToSave.path ? { ...document, saving: true } : document))
     setError(null)
     try {
@@ -268,7 +300,7 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
       if (result.conflict) {
         setDocuments((current) => current.map((document) => document.path === documentToSave.path ? { ...document, saving: false } : document))
         if (window.confirm(text('The file changed on the server after you opened it. Overwrite the remote version with your changes?', 'El archivo cambió en el servidor desde que lo abriste. ¿Sobrescribir la versión remota con tus cambios?'))) {
-          await saveDocument({ ...documentToSave, saving: false, fingerprint: result.current.fingerprint })
+          await saveDocument({ ...documentToSave, saving: false, fingerprint: result.current.fingerprint }, savedDraft)
         }
         return
       }
@@ -287,20 +319,11 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
     }
   }, [connected, context])
 
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (visible && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && activeDocument) {
-        event.preventDefault()
-        void saveDocument(activeDocument)
-      }
-    }
-    window.addEventListener('keydown', keydown)
-    return () => window.removeEventListener('keydown', keydown)
-  }, [activeDocument, saveDocument, visible])
-
   const closeDocument = (document: DocumentTab) => {
     if (document.saving) return
     if (document.draft !== document.content && !window.confirm(text(`Close ${document.name} without saving changes?`, `¿Cerrar ${document.name} sin guardar los cambios?`))) return
+    const model = monaco.editor.getModel(modelUri(sessionId, document.path))
+    if (model) closedModels.current.push(model)
     setDocuments((current) => current.filter((item) => item.path !== document.path))
     if (activePath === document.path) {
       const index = documents.findIndex((item) => item.path === document.path)
@@ -312,15 +335,20 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
   const closeEditor = useCallback(() => onClose(sessionId, { dirty, saving }), [dirty, onClose, saving, sessionId])
 
   useEffect(() => {
-    const closeWithShortcut = (event: KeyboardEvent) => {
-      if (!visible || !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'w') return
+    const editorShortcut = (event: KeyboardEvent) => {
+      if (!visible || event.isComposing || event.altKey || event.shiftKey) return
+      if (isWindows ? !event.ctrlKey || event.metaKey : !event.metaKey || event.ctrlKey) return
+      if (!(event.target instanceof Node) || !editorRoot.current?.contains(event.target)) return
+      const key = event.key.toLowerCase()
+      if (key !== 'w' && !(key === 's' && activeDocument)) return
       event.preventDefault()
       event.stopPropagation()
-      closeEditor()
+      if (key === 'w') closeEditor()
+      else if (activeDocument && !event.repeat) void saveDocument(activeDocument)
     }
-    window.addEventListener('keydown', closeWithShortcut, true)
-    return () => window.removeEventListener('keydown', closeWithShortcut, true)
-  }, [closeEditor, visible])
+    window.addEventListener('keydown', editorShortcut, true)
+    return () => window.removeEventListener('keydown', editorShortcut, true)
+  }, [activeDocument, closeEditor, saveDocument, visible])
 
   const statusLanguage = activeDocument ? languageForPath(activeDocument.path) : 'plaintext'
   const emptyMessage = useMemo(() => loadingPath
@@ -328,13 +356,13 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
     : text('Select a server file to get started.', 'Seleccioná un archivo del servidor para comenzar.'), [loadingPath, text])
 
   return (
-    <main className="editor-shell editor-embedded">
+    <main ref={editorRoot} className="editor-shell editor-embedded">
       <header className="editor-titlebar">
         <button className="editor-return-button" type="button" onClick={onHide} title={text('Hide the editor and expand the terminal; open files are preserved', 'Ocultar editor y ampliar terminal; conserva los archivos abiertos')}><ArrowLeft size={14} /><span>{text('Full terminal', 'Terminal completa')}</span></button>
         <div className="editor-window-brand"><img src={BRAND_ICON} alt="" /><strong>Editor</strong><span>— {profileName}</span></div>
         <div className="editor-window-actions">
-          <button className="editor-save-button" disabled={!connected || !activeDocument || activeDocument.draft === activeDocument.content || activeDocument.saving} onClick={() => activeDocument && void saveDocument(activeDocument)} aria-label={text('Save file', 'Guardar archivo')} title={connected ? text('Save file (⌘S)', 'Guardar archivo (⌘S)') : text('Reconnect the session to save', 'Reconectá la sesión para guardar')}><Save size={15} /></button>
-          <button className="editor-close-button" onClick={closeEditor} aria-label={text('Close editor', 'Cerrar editor')} title={text('Close editor (⌘W)', 'Cerrar editor (⌘W)')}><X size={14} /></button>
+          <button className="editor-save-button" disabled={!connected || !activeDocument || activeDocument.draft === activeDocument.content || activeDocument.saving} onClick={() => activeDocument && void saveDocument(activeDocument)} aria-label={text('Save file', 'Guardar archivo')} title={connected ? text('Save file', 'Guardar archivo') + ' (' + shortcutModifier + 'S)' : text('Reconnect the session to save', 'Reconectá la sesión para guardar')}><Save size={15} /></button>
+          <button className="editor-close-button" onClick={closeEditor} aria-label={text('Close editor', 'Cerrar editor')} title={text('Close editor', 'Cerrar editor') + ' (' + shortcutModifier + 'W)'}><X size={14} /></button>
         </div>
       </header>
       <section className="editor-workspace">
@@ -374,9 +402,9 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
           <div className="editor-canvas">
             {activeDocument ? (
               <Editor
-                path={activeDocument.path}
+                path={modelUri(sessionId, activeDocument.path).toString()}
                 language={languageForPath(activeDocument.path)}
-                value={activeDocument.draft}
+                defaultValue={activeDocument.draft}
                 theme={theme.id}
                 beforeMount={(instance) => instance.editor.defineTheme(theme.id, { ...theme.editor, inherit: true })}
                 onChange={(value) => setDocuments((current) => current.map((document) => document.path === activeDocument.path ? { ...document, draft: value ?? '' } : document))}
@@ -396,7 +424,7 @@ export function EditorPane({ sessionId, profileName, request, fontFamily, fontSi
                 }}
               />
             ) : (
-              <div className="editor-empty"><img src={BRAND_ICON} alt="" /><strong>{emptyMessage}</strong><span>{text('Double-click to open · ⌘S to save', 'Doble clic para abrir · ⌘S para guardar')}</span></div>
+              <div className="editor-empty"><img src={BRAND_ICON} alt="" /><strong>{emptyMessage}</strong><span>{text('Double-click to open', 'Doble clic para abrir')} · {shortcutModifier}S {text('to save', 'para guardar')}</span></div>
             )}
           </div>
         </section>
