@@ -7,3 +7,4 @@ allowBuilds:
   node-pty: true
 patchedDependencies:
   node-pty@1.1.0: patches/node-pty@1.1.0.patch
+  ssh2-streams@0.4.10: patches/ssh2-streams@0.4.10.patch

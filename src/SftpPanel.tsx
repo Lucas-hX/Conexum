@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import type { SftpEntry, SftpTransferProgress } from './conexum'
 import { useI18n } from './i18n'
+import { listRemoteDirectory } from './remote-directory'
 
 type Props = {
   sessionId: string
@@ -70,12 +71,15 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
     canceled: text('canceled', 'cancelado'),
     error: text('error', 'error'),
   }
-  const [directory, setDirectory] = useState(initialDirectory ?? '')
+  const [directory, setDirectory] = useState('')
   const [pathDraft, setPathDraft] = useState(initialDirectory ?? '')
   const [entries, setEntries] = useState<SftpEntry[]>([])
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const [editingPath, setEditingPath] = useState(false)
+  const [nameAction, setNameAction] = useState<'mkdir' | 'rename' | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
+  const [mutating, setMutating] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [loading, setLoading] = useState(true)
@@ -117,17 +121,12 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
     setLoading(true)
     setError(null)
     try {
-      let result
-      try {
-        result = await api.list(sessionId, remotePath)
-      } catch (initialError) {
-        if (!fallbackToHome || !remotePath) throw initialError
-        result = await api.list(sessionId)
-      }
+      const result = await listRemoteDirectory(api, sessionId, remotePath, fallbackToHome)
       if (requestId !== loadRequestId.current) return
       setDirectory(result.directory)
       setPathDraft(result.directory)
       setEditingPath(false)
+      setNameAction(null)
       setEntries(result.entries)
       setSelectedPath(null)
     } catch (loadError) {
@@ -222,34 +221,27 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
     }
   }
 
-  const createFolder = async () => {
-    const name = window.prompt(text('New folder name:', 'Nombre de la carpeta nueva:'))?.trim()
-    if (!name) return
-    if (!validRemoteName(name)) {
-      setError(text('The folder name is not valid.', 'El nombre de la carpeta no es válido.'))
-      return
-    }
-    try {
-      await window.conexum?.sftp.mutate(sessionId, 'mkdir', joinRemote(directory, name))
-      await loadDirectory(directory)
-    } catch (mutationError) {
-      setError(errorMessage(mutationError))
-    }
-  }
-
-  const renameSelected = async () => {
-    if (!selected) return
-    const value = window.prompt(text('New name or absolute remote path:', 'Nuevo nombre o ruta remota absoluta:'), selected.name)?.trim()
-    if (!value || value === selected.name || value === selected.path) return
-    if (!value.startsWith('/') && !validRemoteName(value)) {
+  const submitName = async () => {
+    if (!nameAction || !directory || mutating) return
+    const value = nameDraft.trim()
+    const absoluteTarget = nameAction === 'rename' && value.startsWith('/')
+    if (!validRemoteName(value) && !absoluteTarget) {
       setError(text('The new name or path is not valid.', 'El nombre o la ruta nueva no es válida.'))
       return
     }
+    setMutating(true)
+    setError(null)
     try {
-      await window.conexum?.sftp.mutate(sessionId, 'rename', selected.path, value.startsWith('/') ? value : joinRemote(directory, value))
+      if (nameAction === 'mkdir') await window.conexum?.sftp.mutate(sessionId, 'mkdir', joinRemote(directory, value))
+      else if (selected && value !== selected.name && value !== selected.path) {
+        await window.conexum?.sftp.mutate(sessionId, 'rename', selected.path, absoluteTarget ? value : joinRemote(directory, value))
+      }
+      setNameAction(null)
       await loadDirectory(directory)
     } catch (mutationError) {
       setError(errorMessage(mutationError))
+    } finally {
+      setMutating(false)
     }
   }
 
@@ -308,15 +300,23 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
       </form>
 
       <div className="sftp-actions">
-        <button onClick={() => void chooseUpload()}><ArrowUpFromLine size={14} />{text('Upload', 'Subir')}</button>
+        <button onClick={() => void chooseUpload()} disabled={loading || !directory}><ArrowUpFromLine size={14} />{text('Upload', 'Subir')}</button>
         <button onClick={() => void downloadSelected()} disabled={!selected || selected.type === 'directory'}><ArrowDownToLine size={14} />{text('Download', 'Bajar')}</button>
-        <button onClick={() => void createFolder()}><FolderPlus size={14} /></button>
-        <button onClick={() => void renameSelected()} disabled={!selected}><Pencil size={13} /></button>
-        <button className="danger" onClick={() => void removeSelected()} disabled={!selected}><Trash2 size={13} /></button>
+        <button onClick={() => { setNameAction('mkdir'); setNameDraft('') }} disabled={loading || !directory || mutating} aria-label={text('Create folder', 'Crear carpeta')} title={text('Create folder', 'Crear carpeta')}><FolderPlus size={14} /></button>
+        <button onClick={() => { setNameAction('rename'); setNameDraft(selected?.name ?? '') }} disabled={!selected || mutating} aria-label={text('Rename or move', 'Renombrar o mover')} title={text('Rename or move', 'Renombrar o mover')}><Pencil size={13} /></button>
+        <button className="danger" onClick={() => void removeSelected()} disabled={!selected || mutating} aria-label={text('Delete', 'Eliminar')} title={text('Delete', 'Eliminar')}><Trash2 size={13} /></button>
         <button onClick={() => onOpenEditor(selected?.type === 'file' ? selected.path : undefined, selected?.type === 'directory' ? selected.path : directory)} disabled={loading || !directory} title={text('Open the integrated editor in this folder', 'Abrir el editor integrado en esta carpeta')}><Code2 size={14} />Editor</button>
         <span />
         <button onClick={() => setShowHidden((current) => !current)} title={showHidden ? text('Hide hidden files', 'Ocultar archivos ocultos') : text('Show hidden files', 'Mostrar archivos ocultos')}>{showHidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
       </div>
+
+      {nameAction && <form className="sftp-name-form" onSubmit={(event) => { event.preventDefault(); void submitName() }}>
+        <label>{nameAction === 'mkdir' ? text('New folder name', 'Nombre de la carpeta nueva') : text('New name or absolute remote path', 'Nombre nuevo o ruta remota absoluta')}
+          <input key={nameAction} autoFocus required disabled={mutating} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setNameAction(null) }} />
+        </label>
+        <button type="submit" className="primary-button" disabled={mutating || !nameDraft.trim()}>{nameAction === 'mkdir' ? text('Create', 'Crear') : text('Rename', 'Renombrar')}</button>
+        <button type="button" className="secondary-button" disabled={mutating} onClick={() => setNameAction(null)}>{text('Cancel', 'Cancelar')}</button>
+      </form>}
 
       {error && <div className="sftp-error"><span>{error}</span><button onClick={() => setError(null)}><X size={13} /></button></div>}
 
@@ -337,7 +337,7 @@ export function SftpPanel({ sessionId, profileName, initialDirectory, onClose, o
           <button
             key={entry.path}
             className={`sftp-entry-row ${selectedPath === entry.path ? 'selected' : ''}`}
-            onClick={() => setSelectedPath(entry.path)}
+            onClick={() => { setSelectedPath(entry.path); if (!mutating) setNameAction(null) }}
             onDoubleClick={() => { if (entry.type === 'directory') void loadDirectory(entry.path); else if (entry.type === 'file') onOpenEditor(entry.path, directory) }}
             role="listitem"
             title={`${entry.permissions} · ${entry.owner} · ${entry.modified}`}

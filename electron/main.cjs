@@ -42,6 +42,7 @@ const {
   validateRemotePath,
 } = require('./sftp-core.cjs')
 const { createBackup, parseBackup } = require('./profile-core.cjs')
+const { openWindowsSftp, validDownloadName } = require('./windows-sftp.cjs')
 const { parseMRemoteConnections, MAX_MREMOTE_BYTES, SIZE_ERROR: MREMOTE_SIZE_ERROR } = require('./mremoteng-core.cjs')
 const { localShell, machineInfo, parseLsofCwd, validateLocalConnection } = require('./local-core.cjs')
 const { decodeOsc52Clipboard, windowsClipboardCommand } = require('./clipboard-core.cjs')
@@ -52,6 +53,7 @@ app.setName('Conexum')
 
 const sessions = new SessionRegistry()
 const sessionConnections = new Map()
+const editorWrites = new Map()
 const localSessions = new Map()
 const sessionDiagnostics = new Map()
 const editorState = { dirty: false, saving: false }
@@ -208,8 +210,23 @@ function sessionContext(sessionId) {
   if (!isValidSessionId(sessionId)) throw new Error('Invalid session identifier.')
   const context = sessionConnections.get(sessionId)
   if (!context || !sessions.has(sessionId)) throw new Error('The SSH session is no longer active.')
-  if (!context.controlPath) throw new Error('This tool requires SSH connection sharing, which is unavailable in the Windows preview.')
   return context
+}
+
+function windowsFiles(context) {
+  if (!context.files) {
+    const askpass = app.isPackaged ? path.join(process.resourcesPath, 'ConexumSshAskpass.exe')
+      : path.join(__dirname, '..', 'out', 'windows', 'ConexumSshAskpass.exe')
+    context.files = openWindowsSftp(context.connection, askpass, (closed) => {
+      if (context.files === closed) context.files = null
+    })
+  }
+  return context.files
+}
+
+function closeFileSession(sessionId) {
+  sessionConnections.get(sessionId)?.files?.close()
+  sessionConnections.delete(sessionId)
 }
 
 function validateLocalPath(localPath, mode) {
@@ -285,6 +302,7 @@ function runSftpBatch(context, batch) {
 }
 
 async function readRemoteText(context, remotePath) {
+  if (process.platform === 'win32') return windowsFiles(context).readText(remotePath)
   const validatedPath = validateRemotePath(remotePath)
   const parent = path.posix.dirname(validatedPath)
   const listing = parseSftpListing(await runSftpBatch(context, buildListBatch(parent)), parent)
@@ -315,6 +333,7 @@ async function readRemoteText(context, remotePath) {
 }
 
 async function writeRemoteText(context, request) {
+  if (process.platform === 'win32') return windowsFiles(context).writeText(request)
   const remotePath = validateRemotePath(request.remotePath)
   if (typeof request.content !== 'string' || Buffer.byteLength(request.content, 'utf8') > MAX_EDITOR_FILE_BYTES || request.content.includes('\0')) {
     throw new Error('The content is invalid or exceeds the 2 MB limit.')
@@ -362,6 +381,28 @@ function cancelSessionTransfers(sessionId) {
 
 async function runTransfer(job) {
   const context = sessionContext(job.sessionId)
+  if (process.platform === 'win32') {
+    const controller = new AbortController()
+    job.cancel = () => controller.abort()
+    publishTransfer(job, { progress: 0, status: 'active' })
+    try {
+      await windowsFiles(context).transfer(job, controller.signal, (bytes, total) => {
+        const progress = total ? Math.min(99, Math.floor(bytes * 100 / total)) : 0
+        if (progress > job.progress) {
+          job.progress = progress
+          publishTransfer(job, { progress, status: 'active' })
+        }
+      })
+      controller.signal.throwIfAborted()
+      publishTransfer(job, { progress: 100, status: 'completed' })
+    } catch (error) {
+      if (!controller.signal.aborted) throw error
+      publishTransfer(job, { progress: job.progress, status: 'canceled' })
+    } finally {
+      transferJobs.delete(job.id)
+    }
+    return
+  }
   const args = buildSftpArgs(context.connection, context.controlPath, { batch: false })
   const command = buildTransferCommand(job.direction, job.localPath, job.remotePath)
 
@@ -643,6 +684,7 @@ function registerSftpHandlers() {
   ipcMain.handle('sftp:list', async (_event, { sessionId, remotePath } = {}) => {
     const context = sessionContext(sessionId)
     const validatedPath = validateRemotePath(remotePath, { allowEmpty: true })
+    if (process.platform === 'win32') return windowsFiles(context).list(validatedPath)
     const output = await runSftpBatch(context, buildListBatch(validatedPath))
     return parseSftpListing(output, validatedPath)
   })
@@ -666,7 +708,8 @@ function registerSftpHandlers() {
       const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
       if (result.response !== 0) return false
     }
-    await runSftpBatch(context, batch)
+    if (process.platform === 'win32') await windowsFiles(context).mutate(operation, sourcePath, destinationPath)
+    else await runSftpBatch(context, batch)
     return true
   })
 
@@ -701,7 +744,8 @@ function registerSftpHandlers() {
 
   ipcMain.handle('sftp:choose-download', async (_event, suggestedName) => {
     const safeName = typeof suggestedName === 'string' ? path.basename(suggestedName).replace(/[\r\n\0]/g, '') : 'download'
-    const result = await dialog.showSaveDialog({ title: 'Save remote file', defaultPath: path.join(os.homedir(), 'Downloads', safeName || 'download') })
+    const filename = process.platform === 'win32' && !validDownloadName(safeName) ? 'download' : safeName || 'download'
+    const result = await dialog.showSaveDialog({ title: 'Save remote file', defaultPath: path.join(os.homedir(), 'Downloads', filename) })
     if (result.canceled || !result.filePath) return null
     grantLocalPath(result.filePath, 'download')
     return result.filePath
@@ -713,6 +757,9 @@ function registerSftpHandlers() {
       const remotePath = validateRemotePath(value)
       const name = path.posix.basename(remotePath)
       if (!name || name === '.' || name === '..') throw new Error('A selected file name is not valid.')
+      if (process.platform === 'win32' && !validDownloadName(name)) {
+        throw new Error('A selected name cannot be saved on Windows. Download that file individually and choose another name.')
+      }
       return { remotePath, name }
     })
     const result = await dialog.showOpenDialog({
@@ -788,7 +835,17 @@ function registerSftpHandlers() {
   })
 
   ipcMain.handle('editor:write-text', async (_event, request = {}) => {
-    const result = await writeRemoteText(sessionContext(request.sessionId), request)
+    const context = sessionContext(request.sessionId)
+    const key = JSON.stringify([context.cacheKey, validateRemotePath(request.remotePath)])
+    const prior = editorWrites.get(key)
+    const saving = (prior || Promise.resolve()).catch(() => {}).then(() => {
+      if (sessionContext(request.sessionId) !== context) throw new Error('The SSH session is no longer active.')
+      return writeRemoteText(context, request)
+    })
+    editorWrites.set(key, saving)
+    let result
+    try { result = await saving }
+    finally { if (editorWrites.get(key) === saving) editorWrites.delete(key) }
     if (!result.conflict) {
       for (const window of BrowserWindow.getAllWindows()) sendToRenderer(window.webContents, 'sftp:file-saved', { sessionId: request.sessionId, remotePath: request.remotePath })
     }
@@ -874,8 +931,8 @@ function registerSshHandlers() {
 
     sshProcess.onExit(({ exitCode, signal }) => {
       if (!sessions.remove(connection.sessionId, sshProcess)) return
-      sessionConnections.delete(connection.sessionId)
       cancelSessionTransfers(connection.sessionId)
+      closeFileSession(connection.sessionId)
       const diagnostic = sessionDiagnostics.get(connection.sessionId)
       if (diagnostic) sessionDiagnostics.set(connection.sessionId, {
         ...diagnostic,
@@ -912,7 +969,7 @@ function registerSshHandlers() {
   ipcMain.on('ssh:disconnect', (_event, { sessionId } = {}) => {
     if (!isValidSessionId(sessionId)) return
     cancelSessionTransfers(sessionId)
-    sessionConnections.delete(sessionId)
+    closeFileSession(sessionId)
     localSessions.delete(sessionId)
     const diagnostic = sessionDiagnostics.get(sessionId)
     if (diagnostic) sessionDiagnostics.set(sessionId, { ...diagnostic, status: 'disconnected', endedAt: Date.now(), lastError: null })
@@ -1024,7 +1081,7 @@ function closeAllSessions() {
   transferQueue.clear()
   transferJobs.clear()
   transferRetrySources.clear()
-  sessionConnections.clear()
+  for (const sessionId of sessionConnections.keys()) closeFileSession(sessionId)
   localSessions.clear()
   notificationRateLimits.clear()
   sessionDiagnostics.clear()

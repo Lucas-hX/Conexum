@@ -19,7 +19,7 @@ function parseMRemoteConnections(bytes, defaultUsername) {
     throw new Error(XML_ERROR)
   }
 
-  const result = { profiles: [], unsupported: 0, invalid: 0, defaultedUsers: 0 }
+  const result = { profiles: [], unsupported: 0, invalid: 0, defaultedUsers: 0, legacyIds: {} }
   const stack = []
   const parser = sax.parser(true, { strictEntities: true })
   let sawRoot = false
@@ -49,13 +49,13 @@ function parseMRemoteConnections(bytes, defaultUsername) {
       : attributes[key]
     const node = {
       Protocol: value('Protocol'), Port: value('Port'), Username: value('Username'),
-      group: parent?.group ?? '',
+      folderPath: parent?.folderPath ?? [],
       leaf: false,
     }
     stack.push(node)
     if (!parent) return
     if (attributes.Type === 'Container') {
-      if (attributes.Name) node.group = [node.group, attributes.Name].filter(Boolean).join(' / ')
+      if (attributes.Name) node.folderPath = [...node.folderPath, attributes.Name]
       return
     }
     node.leaf = true
@@ -69,18 +69,22 @@ function parseMRemoteConnections(bytes, defaultUsername) {
       const host = (attributes.Hostname ?? '').trim()
       if (!isIP(host) && !/^[\da-z_][\da-z._-]*$/i.test(host)) throw new Error('Invalid hostname')
       if (node.Port && !/^\d+$/.test(node.Port)) throw new Error('Invalid port')
-      const group = node.group || 'mRemoteNG'
+      const folderPath = node.folderPath.length ? node.folderPath : ['mRemoteNG']
+      const group = folderPath.join(' / ')
       const name = attributes.Name || host
       const port = Number(node.Port || 22)
       const username = node.Username || defaultUsername
-      // Some older exports omit Id. Keep same-host profiles in different folders distinct.
-      const uniqueKey = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(attributes.Id ?? '')
-        ? attributes.Id.toLowerCase() : JSON.stringify([group, name, host, port, username])
-      const id = 'mrng-' + createHash('sha256').update(uniqueKey).digest('hex')
-      const profile = sanitizeProfile({ id, group, name, host, port, username })
+      // Retain previous identifiers, except when a literal separator would
+      // collide with another folder path in an export without a source GUID.
+      const guid = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(attributes.Id ?? '') ? attributes.Id.toLowerCase() : null
+      const legacyKey = JSON.stringify([group, name, host, port, username])
+      const structuredKey = !guid && folderPath.some((part) => part.includes(' / ')) ? JSON.stringify([folderPath, name, host, port, username]) : null
+      const id = importId(guid ?? structuredKey ?? legacyKey)
+      const profile = sanitizeProfile({ id, group, folderPath, name, host, port, username })
       validateConnection({ sessionId: id, profile })
       if (!node.Username) result.defaultedUsers++
       result.profiles.push(profile)
+      if (structuredKey) result.legacyIds[id] = importId(legacyKey)
     } catch {
       result.invalid++
     }
@@ -89,6 +93,10 @@ function parseMRemoteConnections(bytes, defaultUsername) {
   parser.write(xml).close()
   if (!sawRoot) invalidXml()
   return result
+}
+
+function importId(key) {
+  return 'mrng-' + createHash('sha256').update(key).digest('hex')
 }
 
 module.exports = { parseMRemoteConnections, MAX_MREMOTE_BYTES, SIZE_ERROR }

@@ -19,10 +19,16 @@ function sanitizeProfile(profile, { regenerateId = false } = {}) {
   const port = Number(profile.port)
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('The SSH port is not valid.')
   const id = regenerateId ? crypto.randomUUID() : cleanText(profile.id, 'The identifier', { max: 128 })
+  let folderPath
+  if (profile.folderPath !== undefined) {
+    if (!Array.isArray(profile.folderPath) || !profile.folderPath.length || profile.folderPath.length > 128) throw new Error('The folder path is not valid.')
+    folderPath = profile.folderPath.map((name) => cleanText(name, 'The folder name', { max: 200 }))
+  }
   return {
     id,
     name: cleanText(profile.name, 'The name', { max: 200 }),
-    group: cleanText(profile.group, 'The group', { max: 200 }),
+    group: cleanText(folderPath ? folderPath.join(' / ') : profile.group, 'The group', { max: folderPath ? 4096 : 200 }),
+    ...(folderPath ? { folderPath } : {}),
     host: cleanText(profile.host, 'The host', { max: 253 }),
     port,
     username: cleanText(profile.username, 'The username', { max: 128 }),

@@ -27,3 +27,12 @@ test('parses valid backups and rejects incompatible or unsafe data', () => {
   assert.throws(() => parseBackup(JSON.stringify({ format: 'conexum-connections', version: 1, profiles: [{ ...profile, host: 'bad\nhost' }] })), /host is not valid/i)
   assert.throws(() => parseBackup(JSON.stringify({ format: 'conexum-connections', version: 1, profiles: [{ ...profile, port: 99999 }] })), /port/i)
 })
+
+test('backs up the exact folder names and accepts earlier backups with flat groups', () => {
+  const folderPath = ['Lab', 'Nodes / East', 'rack/blue']
+  const nested = { ...profile, folderPath, group: folderPath.join(' / ') }
+  assert.deepEqual(parseBackup(createBackup([nested, profile])), [nested, profile])
+  for (const invalid of [[], [''], 'wrong', ['unsafe\nname']]) {
+    assert.throws(() => createBackup([{ ...profile, folderPath: invalid }]), /folder/i)
+  }
+})

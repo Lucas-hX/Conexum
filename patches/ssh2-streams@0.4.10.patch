@@ -1,0 +1,36 @@
+diff --git a/lib/sftp.js b/lib/sftp.js
+index 4f814c9752ecb0259e8186d379ea9bb68d0a79fd..07d330442d926283cff86d077ecdd795b9a84e78 100644
+--- a/lib/sftp.js
++++ b/lib/sftp.js
+@@ -6,7 +6,7 @@ var WritableStream = require('stream').Writable;
+ var constants = require('fs').constants || process.binding('constants');
+ var util = require('util');
+ var inherits = util.inherits;
+-var isDate = util.isDate;
++var isDate = util.types.isDate;
+ var listenerCount = require('events').EventEmitter.listenerCount;
+ var fs = require('fs');
+ 
+@@ -152,7 +152,7 @@ function SFTPStream(cfg, remoteIdentRaw) {
+     pktBuf: undefined,
+     pktType: undefined,
+     version: undefined,
+-    extensions: {},
++    extensions: Object.create(null),
+ 
+     // client
+     maxDataLen: (this._isOpenSSH ? OPENSSH_MAX_DATA_LEN : 32768),
+@@ -277,6 +277,13 @@ SFTPStream.prototype._transform = function(chunk, encoding, callback) {
+         pktLeft = readUInt32BE(buffer, 4) - 1; // account for type byte
+         pktType = buffer[8];
+ 
++        // Bound incoming SFTP replies before allocating their payload buffers.
++        // OpenSSH caps packets at 256 KiB; every v3 reply includes a uint32.
++        if (!server && (pktLeft < 4 || pktLeft > 256 * 1024)) {
++          this._cleanup(false);
++          return callback(new Error('Invalid SFTP response length'));
++        }
++
+         if (server) {
+           if (version === undefined && pktType !== REQUEST.INIT) {
+             debug('DEBUG[SFTP]: Parser: Unexpected packet before init');

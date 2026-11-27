@@ -12,7 +12,7 @@
 
 ## What is Conexum?
 
-Conexum organizes SSH profiles and opens independent terminal tabs using the operating system's OpenSSH client. You can also open a local shell on macOS or Windows. The Windows preview focuses on terminal sessions, clipboard support and importing existing SSH connections.
+Conexum organizes SSH profiles and opens independent terminal tabs using the operating system's OpenSSH client. On macOS and Windows you can also open a local shell, browse remote files over SFTP and edit text alongside the terminal.
 
 ## Windows preview
 
@@ -25,10 +25,12 @@ Extract the entire `Conexum-Windows-<version>-x64.zip` archive to a folder and o
 **Import your mRemoteNG sessions**
 
 1. In mRemoteNG, right-click the folder you want to migrate and choose **Export to file**. Select **mRemoteNG XML**, include **Username** and **Inheritance**, and clear **Password**. If the original file uses full-file encryption, use mRemoteNG to open it and export the profiles. [mRemoteNG export guide](https://mremoteng.readthedocs.io/en/latest/user_interface/import_export.html#export-to-file)
-2. In Conexum, open **Settings → Import from mRemoteNG** and select the XML. Each SSH profile keeps its name, host, port and effective username. Folder paths become group names such as `Lab / West`. If the username is empty, Conexum uses your local username. You can edit it before connecting.
+2. In Conexum, open **Settings → Import from mRemoteNG** and select the XML. Each SSH profile keeps its name, host, port and effective username. Expand a parent folder to see its subfolders. Connections imported with the first Windows preview also appear under their shared parents. If an old folder name itself contained the exact separator ` / `, reimport the original XML to recover the original boundaries. If the username is empty, Conexum uses your local username. You can edit it before connecting.
 3. Expand a group and double-click a profile. For password authentication, enter the password at the OpenSSH prompt. For key authentication, use the Windows OpenSSH agent or select an OpenSSH private key in the profile. PuTTY session settings, tunnels and saved passwords are outside the XML import. The result reports duplicates, unsupported protocols such as RDP and SSH1, and invalid SSH entries.
 
-The SFTP browser, remote editor, Git panel, CPU/RAM metrics and local working-directory tracking are available on macOS. The Windows preview opens an independent OpenSSH process for each SSH tab.
+![A single Lab folder expanded into Database and Web, each with two SSH profiles](docs/windows-connection-folders.png)
+
+**Remote files on Windows.** In a connected SSH tab, select **SFTP** or **Editor**. The first file operation opens a separate OpenSSH connection for that tab. If authentication requires your password, key passphrase or a second factor, enter it in the **Conexum SFTP — OpenSSH** dialog. The browser and editor reuse that connection until it closes. Double-click a text file to edit it and press **Ctrl+S** to save. Saving an existing file requires a server with the OpenSSH POSIX rename extension for atomic replacement. The Git panel, CPU/RAM metrics and local working-directory tracking are available on macOS.
 
 ## Current status
 
@@ -152,7 +154,7 @@ The status bar shows the current directory when a remote shell emits OSC 7. See 
 
 Conexum checks CPU and RAM about every nine seconds for the visible tab only. It reuses the session's multiplexed SSH socket, runs a fixed read-only command, and shares the result between tabs connected to the same server. It never injects commands into the interactive terminal. Linux and macOS hosts are supported; the first CPU reading is `—` until a second sample is available.
 
-## macOS SFTP browser
+## SFTP browser
 
 With an active SSH session, select the **SFTP** folder icon to open the side panel. The browser starts in the last path reported by that tab through OSC 7. If no path is available, it opens the remote home directory without interrupting you. The selected folder remains open while you browse, even if the terminal directory changes.
 
@@ -164,13 +166,13 @@ The panel can:
 - create folders;
 - rename or move files and folders;
 - delete files or empty folders with confirmation;
-- upload files through the picker or drag and drop from Finder;
+- upload files through the picker or by dragging them from File Explorer or Finder;
 - download files to a selected local destination;
 - monitor and cancel transfers in a compact queue;
 - open text files directly in Conexum Editor;
 - close or resize without interrupting the terminal.
 
-Conexum uses `/usr/bin/sftp` and the existing session's multiplexed socket. It neither stores credentials nor implements the SFTP protocol itself. Local files can be transferred only after you explicitly select them with Finder, a macOS dialog, or drag and drop.
+On macOS, the system SFTP client uses the terminal's multiplexed OpenSSH socket. On Windows, the OpenSSH client starts the SFTP subsystem on demand and a library handles its file operations over the authenticated connection. Select local files with the file picker or by dragging them into the app.
 
 Canceled transfers may leave a partial file on the server or in the local folder. Conexum leaves it visible so you can inspect, retry, or delete it; it never removes partial files automatically. Failed and canceled transfers include a retry button. Retrying validates the local path again and starts a new transfer without attempting to merge partial data.
 
@@ -198,9 +200,9 @@ Choose **Settings → Theme** to switch between **Conexum Dark**, **Midnight Blu
 
 Right-click an SSH connection and choose **Duplicate…** to prepare a new profile with the same group, destination, port, username, and configured key path. The copy receives a new identifier and opens in the connection form so you can change its name, username, or other settings before saving. As with every Conexum profile, no password, passphrase, or private-key content is copied or stored.
 
-## Conexum Editor on macOS
+## Conexum Editor
 
-With an active SSH session, select **Editor** or open a file from SFTP. The editor appears inside Conexum beside the terminal, and you can drag the divider to resize it. Its tree starts at the most recent path reported through OSC 7 or at the remote home directory. You can enter another absolute path and press Enter or the arrow button; Home returns to the remote user's home directory. Opening Editor from SFTP preserves the browsed folder, and opening a file shows its parent folder. The editor reuses the existing multiplexed connection and does not request credentials again.
+With an active SSH session, select **Editor** or open a file from SFTP. The editor appears beside the terminal, and you can drag the divider to resize it. Its tree starts at the most recent path reported through OSC 7 or at the remote home directory. Enter an absolute path and press Enter to change folders. Home returns to the remote user's home directory. Opening a file from SFTP takes you to its parent folder.
 
 The first version includes:
 
@@ -208,12 +210,12 @@ The first version includes:
 - multi-file selection with queued uploads and downloads, including individual progress for each file;
 - document tabs and Monaco syntax highlighting;
 - search, replace, line numbers, and standard editing shortcuts;
-- remote saving with `⌘S`;
+- remote saving with `⌘S` on macOS and `Ctrl+S` on Windows;
 - fingerprint verification before overwriting;
 - confirmation if the server copy changed;
 - replacement through a remote temporary file while preserving permissions;
 - confirmation before closing documents, the editor, an SSH tab, or Conexum with pending changes;
-- a **Full terminal** button that hides the editor without losing drafts, while X and `⌘W` close it with confirmation when necessary;
+- a **Full terminal** button that hides the editor without losing drafts, and a close shortcut (`Ctrl+W` on Windows, `⌘W` on macOS) that checks for unsaved changes;
 - rejection of binary, non-UTF-8, or larger-than-2-MB files.
 
 The editor requires an active SSH session. If the session ends, open content remains visible, but you must reconnect before browsing or saving again.
@@ -250,7 +252,7 @@ Right-click a connection to open a new session, duplicate it, or edit its settin
 - External links are limited to credential-free HTTP/HTTPS URLs and open without a command shell.
 - Visible, focused terminals may write up to 1 MiB of validated UTF-8 text to the local clipboard through OSC 52. Clipboard reads, background tabs, unsupported selections, and malformed payloads are rejected.
 - On macOS, the local directory is checked with `lsof` against the shell process every two seconds while the local tab is visible.
-- SFTP runs in a separate process with `BatchMode=yes`, without forwarding ports or requesting new credentials.
+- macOS file operations use a multiplexed SSH connection with `BatchMode=yes`. Windows file operations share a tab-specific OpenSSH subsystem. Its native authentication dialog sends the response directly to OpenSSH.
 - Deleting remote content always requires confirmation, and folders are removed only when empty.
 - The editor checks for conflicts before saving and never silently overwrites a different remote version.
 

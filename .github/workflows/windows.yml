@@ -25,6 +25,7 @@ jobs:
       - run: pnpm run test
       - run: pnpm run package:win
       - run: pnpm exec electron tests/windows-terminal-smoke.cjs
+      - run: pnpm exec electron tests/windows-editor-smoke.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: Conexum-Windows-x64
