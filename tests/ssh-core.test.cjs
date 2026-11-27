@@ -1,5 +1,8 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const path = require('node:path')
+const fs = require('node:fs')
+const { spawnSync } = require('node:child_process')
 
 const {
   CONTROL_PERSIST_SECONDS,
@@ -9,6 +12,7 @@ const {
   buildSshArgs,
   calculateTelemetry,
   expandHome,
+  openSshExecutable,
   processEnvForSsh,
   parseTelemetrySample,
   readHostAliases,
@@ -100,11 +104,12 @@ test('adds a shared control socket to interactive SSH without changing the desti
     identityFile: '',
     configFile: '',
     sshAlias: '',
-  }, { controlPath: '/tmp/conexum-control' })
+  }, { platform: 'darwin', controlPath: '/tmp/conexum-control' })
 
   assert.equal(args.at(-1), 'deploy@example.com')
   assert.ok(args.includes('/tmp/conexum-control'))
   assert.ok(args.includes('ControlMaster=auto'))
+  assert.ok(args.includes('UseKeychain=yes'))
   assert.ok(args.includes(`ControlPersist=${CONTROL_PERSIST_SECONDS}`))
   assert.equal(CONTROL_PERSIST_SECONDS, 600)
 })
@@ -120,7 +125,7 @@ test('rejects control socket paths that leave no room for the OpenSSH temporary 
     identityFile: '',
     configFile: '',
     sshAlias: '',
-  }, { controlPath: `/tmp/${'a'.repeat(80)}` }), /too long/i)
+  }, { platform: 'darwin', controlPath: `/tmp/${'a'.repeat(80)}` }), /too long/i)
 })
 
 test('builds read-only telemetry arguments over the existing control socket', () => {
@@ -197,7 +202,7 @@ test('reads concrete aliases and ignores wildcard SSH config entries', () => {
 })
 
 test('expands home paths and keeps only allowlisted SSH environment values', () => {
-  assert.equal(expandHome('~/.ssh/id_ed25519', '/Users/test'), '/Users/test/.ssh/id_ed25519')
+  assert.equal(expandHome('~/.ssh/id_ed25519', '/Users/test'), path.join('/Users/test', '.ssh', 'id_ed25519'))
   assert.deepEqual(processEnvForSsh({
     HOME: '/Users/test',
     PATH: '/usr/bin',
@@ -208,6 +213,39 @@ test('expands home paths and keeps only allowlisted SSH environment values', () 
     PATH: '/usr/bin',
     SSH_AUTH_SOCK: '/tmp/agent.sock',
   })
+})
+
+test('uses the Windows OpenSSH client without macOS Keychain or a control socket', () => {
+  const connection = validateConnection(connectionRequest())
+  const args = buildSshArgs(connection, { platform: 'win32', controlPath: '/unused' })
+  assert.equal(args.at(-1), 'deploy@example.com')
+  assert.equal(args.some((arg) => /keychain|controlmaster|controlpersist|^-S$/i.test(arg)), false)
+  assert.equal(openSshExecutable('ssh', 'win32', 'D:\\Windows'), 'D:\\Windows\\System32\\OpenSSH\\ssh.exe')
+  assert.deepEqual(processEnvForSsh({
+    Path: 'test-path', SystemRoot: 'D:\\Windows', UsErPrOfIlE: 'test-profile', APPDATA: 'test-data',
+    SECRET_TOKEN: 'private', SSH_ASKPASS: 'untrusted',
+  }, 'win32'), { Path: 'test-path', SystemRoot: 'D:\\Windows', UsErPrOfIlE: 'test-profile', APPDATA: 'test-data' })
+})
+
+test('Windows OpenSSH parses the interactive profile without opening a connection', {
+  skip: process.platform !== 'win32' || !fs.existsSync(openSshExecutable('ssh')),
+}, () => {
+  const args = buildSshArgs(validateConnection(connectionRequest()))
+  const result = spawnSync(openSshExecutable('ssh'), ['-G', '-F', 'none', ...args], {
+    encoding: 'utf8', env: processEnvForSsh(), windowsHide: true, timeout: 5_000,
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^user deploy\r?$/m)
+  assert.match(result.stdout, /^hostname example\.com\r?$/m)
+})
+
+test('Windows terminal preserves TUI clipboard and paste sequences and releases both closed and exited tabs', {
+  skip: process.platform !== 'win32',
+}, () => {
+  const probe = path.join(__dirname, 'fixtures', 'windows-pty-probe.cjs')
+  const result = spawnSync(process.execPath, [probe], { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stderr)
 })
 
 test('validates terminal input and clamps resize messages', () => {

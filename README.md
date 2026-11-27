@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/brand/conexum-icon.png" width="104" alt="Conexum logo" />
   <h1>Conexum</h1>
-  <p><strong>A simple SSH connection manager for macOS.</strong></p>
+  <p><strong>A terminal-first SSH connection manager for macOS and Windows.</strong></p>
   <p>A quiet, terminal-first visual interface for organizing and using SSH connections without replacing the system tools you already trust.</p>
 </div>
 
@@ -12,14 +12,28 @@
 
 ## What is Conexum?
 
-Conexum is an SSH connection manager inspired by the clarity of mRemoteNG and MobaXterm, designed specifically for macOS. It can also open a local terminal on your Mac. The terminal remains the primary workspace; the SFTP browser, remote editor, and observability tools appear only when you need them.
+Conexum organizes SSH profiles and opens independent terminal tabs using the operating system's OpenSSH client. You can also open a local shell on macOS or Windows. The Windows preview focuses on terminal sessions, clipboard support and importing existing SSH connections.
 
-The project does not reinvent security-sensitive protocols. Connections, keys, agents, and host verification are delegated to the OpenSSH installation included with macOS.
+## Windows preview
+
+Use the x64 build on Windows 10 or 11 with the **OpenSSH Client** optional feature installed. Windows Settings lets you search for it under **Optional features**. [Microsoft's OpenSSH installation guide](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse#install-openssh-server--client)
+
+Extract the entire `Conexum-Windows-<version>-x64.zip` archive to a folder and open `Conexum.exe` there. The ZIP includes Electron and the native terminal module. Double-click **Local terminal** to open Windows PowerShell, or double-click an SSH profile to connect. Windows OpenSSH handles host verification, password prompts, key files and agent authentication.
+
+**Copy and paste in OpenCode and other fullscreen tools.** Hold **Shift** while dragging the mouse to select terminal text, then press **Ctrl+Shift+C** to copy. Paste with **Ctrl+Shift+V** or **Shift+Insert**. With no text selected, **Ctrl+C** interrupts the running command.
+
+**Import your mRemoteNG sessions**
+
+1. In mRemoteNG, right-click the folder you want to migrate and choose **Export to file**. Select **mRemoteNG XML**, include **Username** and **Inheritance**, and clear **Password**. If the original file uses full-file encryption, use mRemoteNG to open it and export the profiles. [mRemoteNG export guide](https://mremoteng.readthedocs.io/en/latest/user_interface/import_export.html#export-to-file)
+2. In Conexum, open **Settings → Import from mRemoteNG** and select the XML. Each SSH profile keeps its name, host, port and effective username. Folder paths become group names such as `Lab / West`. If the username is empty, Conexum uses your local username. You can edit it before connecting.
+3. Expand a group and double-click a profile. For password authentication, enter the password at the OpenSSH prompt. For key authentication, use the Windows OpenSSH agent or select an OpenSSH private key in the profile. PuTTY session settings, tunnels and saved passwords are outside the XML import. The result reports duplicates, unsupported protocols such as RDP and SSH1, and invalid SSH entries.
+
+The SFTP browser, remote editor, Git panel, CPU/RAM metrics and local working-directory tracking are available on macOS. The Windows preview opens an independent OpenSSH process for each SSH tab.
 
 ## Current status
 
-- Real SSH connections through `/usr/bin/ssh` and `node-pty`.
-- An integrated local terminal using the macOS shell, available by default in a group named after your Mac.
+- Real SSH connections through the system OpenSSH client and `node-pty`.
+- An integrated local terminal using Zsh on macOS or Windows PowerShell on Windows.
 - Multiple independent sessions in compact, drag-reorderable tabs integrated into the macOS title bar, including multiple sessions to the same server.
 - A two-terminal split view or a grid of up to four open sessions.
 - A simplified Home screen with quick access to the local terminal and up to three SSH connections.
@@ -27,10 +41,10 @@ The project does not reinvent security-sensitive protocols. Connections, keys, a
 - Profiles organized into groups that start collapsed.
 - Visual profile creation and editing.
 - Connection duplication from the right-click menu for quickly reusing a server with another username or configuration.
-- Import from an SSH config file.
+- Import from an SSH config file or mRemoteNG XML.
 - Support for username, host, port, alias, and `IdentityFile`.
 - Integration with `ssh-agent` and macOS Keychain for passphrases.
-- Reuse of a private OpenSSH control connection for up to ten minutes after a session ends cleanly, reducing repeated authentication prompts without storing passwords.
+- On macOS, reuse of a private OpenSSH control connection for up to ten minutes after a session ends cleanly.
 - A collapsible, resizable sidebar that becomes a temporary overlay when hidden.
 - Individual session closing with confirmation and one-click reconnection from disconnected tabs.
 - Connection groups that can be renamed or deleted from their context menu.
@@ -56,12 +70,11 @@ Code signing and notarization, advanced editor features, and other improvements 
 
 ## Requirements
 
-- macOS on Apple Silicon or Intel.
-- Node.js 22 or later.
-- pnpm.
-- OpenSSH, included with macOS.
+- macOS on Apple Silicon or Intel, or Windows 10/11 x64 for the Windows preview.
+- OpenSSH, included with macOS and available as the Windows **OpenSSH Client** optional feature.
+- Node.js 22.12 or later and pnpm for development.
 
-The easiest way to install Node.js and pnpm is with Homebrew:
+On macOS you can install Node.js and pnpm with Homebrew.
 
 ```bash
 brew install node pnpm
@@ -73,11 +86,9 @@ brew install node pnpm
 git clone https://github.com/Lucas-hX/Conexum.git
 cd Conexum
 pnpm install
-pnpm run rebuild:native
-pnpm run desktop
 ```
 
-`rebuild:native` recompiles `node-pty` for the Electron version used by the project. You normally need to run it only after installing or updating dependencies.
+On macOS, run `pnpm run rebuild:native` after installing or updating native dependencies. Windows x64 uses the native binary shipped by `node-pty`. On either platform, run `pnpm run desktop` to start Conexum.
 
 ## Useful commands
 
@@ -100,6 +111,9 @@ pnpm run desktop
 # Generate an unsigned local app
 pnpm run package:mac
 
+# Generate the Windows x64 ZIP in release/ on Windows
+pnpm run package:win
+
 # Update, validate, package, and install the latest main branch
 pnpm run update:local
 ```
@@ -108,7 +122,7 @@ Real SSH connections are available only in Electron. The browser version is inte
 
 The local package is generated at `release/mac-arm64/Conexum.app` on Apple Silicon or the corresponding Intel directory. Because the app is unsigned, macOS may request extra confirmation before opening it. Pull requests and changes to `main` run the same checks in GitHub Actions and produce a downloadable test ZIP for 14 days.
 
-## Alpha updates
+## macOS alpha updates
 
 The `scripts/update-conexum.command` file automates local updates from source. Open it from Finder or run:
 
@@ -130,7 +144,7 @@ Profiles remain in Application Support and are not part of the replaced app bund
 
 This mechanism is intended for maintainers and contributors during the alpha stage. A future public updater will require signing, notarization, and versioned releases.
 
-## Local terminal, directories, and remote metrics
+## macOS local terminal, directories, and remote metrics
 
 The group named after your Mac can open any number of independent local terminals without creating an SSH profile or connecting to `localhost`. Each tab runs `/bin/zsh` in a pseudo-terminal. Conexum checks its directory locally at a low frequency without sending shell commands or recording what you type. The local profile is excluded from SSH backups. SFTP, the remote editor, and SSH diagnostics are available only for remote sessions.
 
@@ -138,7 +152,7 @@ The status bar shows the current directory when a remote shell emits OSC 7. See 
 
 Conexum checks CPU and RAM about every nine seconds for the visible tab only. It reuses the session's multiplexed SSH socket, runs a fixed read-only command, and shares the result between tabs connected to the same server. It never injects commands into the interactive terminal. Linux and macOS hosts are supported; the first CPU reading is `—` until a second sample is available.
 
-## SFTP browser
+## macOS SFTP browser
 
 With an active SSH session, select the **SFTP** folder icon to open the side panel. The browser starts in the last path reported by that tab through OSC 7. If no path is available, it opens the remote home directory without interrupting you. The selected folder remains open while you browse, even if the terminal directory changes.
 
@@ -162,7 +176,7 @@ Canceled transfers may leave a partial file on the server or in the local folder
 
 ## Backups and diagnostics
 
-The Settings menu can export and import Conexum connections. A backup includes names, groups, destinations, ports, usernames, and configured paths, but never passwords, passphrases, or private-key contents. Exported files use restrictive local permissions.
+The Settings menu can export and import Conexum connections. A backup contains only names, groups, destinations, ports, usernames and configured paths. On macOS the backup uses owner-only file permissions. On Windows, access follows the destination folder’s permissions.
 
 With a tab selected, **SSH diagnostics** shows only sanitized profile and OpenSSH process data: destination, port, username, IdentityFile, status, and exit code. **Copy diagnostics** never includes terminal content or keystrokes.
 
@@ -174,9 +188,7 @@ Plain HTTP/HTTPS URLs and OSC 8 hyperlinks are clickable. Choose the default bro
 
 For easier Codex scrollback, use `/tui` and select `scrollback`, or start Codex with `codex --no-alt-screen`. `/raw` or `Alt-R` switches to copy-friendly output. Conexum also provides precise, normal, fast, and very-fast wheel/trackpad sensitivity plus optional smooth scrolling under Settings.
 
-Select **Git** in the bottom bar to open the read-only repository panel. It shows the branch, changed paths, and staged/unstaged short statistics for the active directory. Remote checks reuse the active multiplexed SSH connection with `BatchMode=yes`; local checks use the shell process's actual working directory. The panel runs only fixed Git status/diff commands, never reads file contents, never injects text into the terminal, limits results to 200 paths, and refreshes only while visible.
-
-The new browser, notification, terminal-event, and Git APIs are platform-neutral in the renderer and preload boundary. Platform-specific executable discovery is isolated in Electron helpers, including direct Chrome executable candidates for Windows without `cmd.exe` or shell-built commands. A future Windows port still needs adapters for the interactive shell, SFTP binary discovery, keychain behavior, local working-directory discovery, packaging, and installer updates.
+On macOS, select **Git** in the bottom bar to open the read-only repository panel. It shows the branch, changed paths, and staged/unstaged short statistics for the active directory. Remote checks reuse the active multiplexed SSH connection with `BatchMode=yes`; local checks use the shell process's actual working directory. The panel runs only fixed Git status/diff commands, never reads file contents, never injects text into the terminal, limits results to 200 paths, and refreshes only while visible.
 
 ## Themes and connection duplication
 
@@ -186,7 +198,7 @@ Choose **Settings → Theme** to switch between **Conexum Dark**, **Midnight Blu
 
 Right-click an SSH connection and choose **Duplicate…** to prepare a new profile with the same group, destination, port, username, and configured key path. The copy receives a new identifier and opens in the connection form so you can change its name, username, or other settings before saving. As with every Conexum profile, no password, passphrase, or private-key content is copied or stored.
 
-## Conexum Editor
+## Conexum Editor on macOS
 
 With an active SSH session, select **Editor** or open a file from SFTP. The editor appears inside Conexum beside the terminal, and you can drag the divider to resize it. Its tree starts at the most recent path reported through OSC 7 or at the remote home directory. You can enter another absolute path and press Enter or the arrow button; Home returns to the remote user's home directory. Opening Editor from SFTP preserves the browsed folder, and opening a file shows its parent folder. The editor reuses the existing multiplexed connection and does not request credentials again.
 
@@ -209,7 +221,7 @@ The editor requires an active SSH session. If the session ends, open content rem
 ## First use
 
 1. Run `pnpm run desktop`.
-2. Double-click **Local terminal** to use this Mac, or create/import an SSH connection.
+2. Double-click **Local terminal** to use your computer, or create/import an SSH connection.
 3. Double-click a server to open an SSH session.
 4. Double-click it again to open another independent session to the same server.
 5. Hover a session tab for a safe status preview; drag tabs to reorder them, use **R** to reconnect a disconnected tab, or use its close button or double-click the tab to end it with confirmation.
@@ -225,7 +237,7 @@ Right-click a connection to open a new session, duplicate it, or edit its settin
 ## Security
 
 - Conexum does not store SSH passwords.
-- Recently authenticated connections may be reused for up to ten minutes through an OpenSSH control socket inside a private per-app directory. A lost network connection or expired control connection requires authentication again.
+- On macOS, recently authenticated connections may be reused for up to ten minutes through an OpenSSH control socket inside a private per-app directory. A lost network connection or expired control connection requires authentication again.
 - Private keys are never copied; only the `IdentityFile` path is retained.
 - `ssh-agent` and macOS Keychain can manage passphrases.
 - Password prompts, new fingerprints, and OpenSSH warnings appear directly in the terminal.
@@ -237,7 +249,7 @@ Right-click a connection to open a new session, duplicate it, or edit its settin
 - Git summaries execute only fixed read-only commands and expose paths plus aggregate counts, never file content or arbitrary renderer-supplied commands.
 - External links are limited to credential-free HTTP/HTTPS URLs and open without a command shell.
 - Visible, focused terminals may write up to 1 MiB of validated UTF-8 text to the local clipboard through OSC 52. Clipboard reads, background tabs, unsupported selections, and malformed payloads are rejected.
-- The local directory is checked with `lsof` against the shell process every two seconds while the local tab is visible.
+- On macOS, the local directory is checked with `lsof` against the shell process every two seconds while the local tab is visible.
 - SFTP runs in a separate process with `BatchMode=yes`, without forwarding ports or requesting new credentials.
 - Deleting remote content always requires confirmation, and folders are removed only when empty.
 - The editor checks for conflicts before saving and never silently overwrites a different remote version.
@@ -250,6 +262,7 @@ Before submitting changes:
 
 ```bash
 pnpm install
+# macOS only
 pnpm run rebuild:native
 pnpm run check
 pnpm run desktop
@@ -257,8 +270,7 @@ pnpm run desktop
 
 When testing a feature, include:
 
-- Mac model and macOS version;
-- Apple Silicon or Intel architecture;
+- operating system, version and processor architecture;
 - Node.js and pnpm versions;
 - remote shell;
 - reproduction steps;
@@ -285,7 +297,7 @@ Contributions should preserve the project's core principles: terminal first, low
 - Vite
 - xterm.js
 - node-pty
-- macOS OpenSSH
+- System OpenSSH client
 - Lucide Icons
 
 ## Documentation

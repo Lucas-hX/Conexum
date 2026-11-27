@@ -1,0 +1,33 @@
+name: Windows preview
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test
+      - run: pnpm run package:win
+      - run: pnpm exec electron tests/windows-terminal-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Conexum-Windows-x64
+          path: release/Conexum-Windows-*-x64.zip
+          if-no-files-found: error
+          retention-days: 14

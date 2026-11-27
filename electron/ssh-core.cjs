@@ -2,6 +2,13 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
+// The bundled ConPTY preserves TUI mouse, clipboard and bracketed-paste sequences
+// even when an older copy of OpenConsole ships with Windows.
+const INTERACTIVE_PTY_OPTIONS = {
+  name: 'xterm-256color',
+  useConptyDll: process.platform === 'win32',
+}
+
 const ALLOWED_SSH_ENVIRONMENT_KEYS = [
   'HOME',
   'USER',
@@ -12,6 +19,16 @@ const ALLOWED_SSH_ENVIRONMENT_KEYS = [
   'SSH_AUTH_SOCK',
   'TMPDIR',
 ]
+
+const WINDOWS_SSH_ENVIRONMENT_KEYS = [
+  'SystemRoot', 'WINDIR', 'USERPROFILE', 'USERNAME', 'HOMEDRIVE', 'HOMEPATH',
+  'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'TEMP', 'TMP', 'ComSpec', 'PATHEXT',
+]
+
+function openSshExecutable(tool, platform = process.platform, windowsRoot = process.env.SystemRoot) {
+  if (platform === 'win32') return path.win32.join(windowsRoot || 'C:\\Windows', 'System32', 'OpenSSH', `${tool}.exe`)
+  return `/usr/bin/${tool}`
+}
 
 const TELEMETRY_COMMAND = `LC_ALL=C
 os=$(uname -s 2>/dev/null || printf unknown)
@@ -61,7 +78,7 @@ function validateControlPath(controlPath) {
 function expandHome(filePath, homeDirectory = os.homedir()) {
   if (!filePath) return ''
   if (filePath === '~') return homeDirectory
-  if (filePath.startsWith('~/')) return path.join(homeDirectory, filePath.slice(2))
+  if (filePath.startsWith('~/') || (process.platform === 'win32' && filePath.startsWith('~\\'))) return path.join(homeDirectory, filePath.slice(2))
   return path.resolve(filePath)
 }
 
@@ -122,7 +139,11 @@ function readHostAliases(configText) {
   return aliases
 }
 
-function processEnvForSsh(environment = process.env) {
+function processEnvForSsh(environment = process.env, platform = process.platform) {
+  if (platform === 'win32') {
+    const allowed = new Set([...ALLOWED_SSH_ENVIRONMENT_KEYS, ...WINDOWS_SSH_ENVIRONMENT_KEYS].map((key) => key.toUpperCase()))
+    return Object.fromEntries(Object.entries(environment).filter(([key, value]) => value && allowed.has(key.toUpperCase())))
+  }
   return Object.fromEntries(ALLOWED_SSH_ENVIRONMENT_KEYS.flatMap((key) => environment[key] ? [[key, environment[key]]] : []))
 }
 
@@ -144,16 +165,17 @@ function appendConnectionArgs(args, connection) {
 }
 
 function buildSshArgs(connection, options = {}) {
+  const platform = options.platform || process.platform
   const args = [
     '-tt',
     '-o', 'ConnectTimeout=15',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ServerAliveCountMax=3',
     '-o', 'AddKeysToAgent=yes',
-    '-o', 'UseKeychain=yes',
   ]
+  if (platform === 'darwin') args.push('-o', 'UseKeychain=yes')
 
-  if (options.controlPath) {
+  if (options.controlPath && platform !== 'win32') {
     const controlPath = validateControlPath(options.controlPath)
     args.push(
       '-S', controlPath,
@@ -330,6 +352,7 @@ class SessionRegistry {
 
 module.exports = {
   CONTROL_PERSIST_SECONDS,
+  INTERACTIVE_PTY_OPTIONS,
   SessionRegistry,
   buildControlCommandSshArgs,
   buildTelemetrySshArgs,
@@ -338,6 +361,7 @@ module.exports = {
   expandHome,
   isSafeText,
   isValidSessionId,
+  openSshExecutable,
   processEnvForSsh,
   parseTelemetrySample,
   readHostAliases,

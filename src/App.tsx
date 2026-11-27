@@ -85,17 +85,19 @@ const RIVER_BANNER_HEIGHT_KEY = 'conexum.riverBannerHeight.v1'
 const RECENT_CONNECTIONS_KEY = 'conexum.recentConnections.v1'
 const TERMINAL_FONT_SETTINGS_KEY = 'conexum.terminalFontSettings.v1'
 const TERMINAL_BEHAVIOR_SETTINGS_KEY = 'conexum.terminalBehaviorSettings.v1'
+const IS_WINDOWS = window.conexum?.isWindows === true
+const LOCAL_GROUP_LABELS: [string, string] = IS_WINDOWS ? ['This PC', 'Esta PC'] : ['This Mac', 'Esta Mac']
 const TERMINAL_FONT_PRESETS = [
   { id: 'jetbrains-mono', label: 'JetBrains Mono', family: '"JetBrains Mono", "JetBrainsMono NF", "SFMono-Regular", Menlo, monospace' },
   { id: 'jetbrains-mono-nerd', label: 'JetBrains Mono Nerd Font', family: '"JetBrainsMono NFM", "JetBrainsMono NF", "JetBrains Mono", "SFMono-Regular", Menlo, monospace' },
   { id: 'sf-mono', label: 'SF Mono', family: '"SFMono-Regular", Menlo, monospace' },
-  { id: 'cascadia-code', label: 'Cascadia Code', family: '"Cascadia Code", "SFMono-Regular", Menlo, monospace' },
+  { id: 'cascadia-code', label: 'Cascadia Code', family: '"Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace' },
   { id: 'menlo', label: 'Menlo', family: 'Menlo, monospace' },
   { id: 'monaco', label: 'Monaco', family: 'Monaco, Menlo, monospace' },
 ] as const
 type TerminalFontId = typeof TERMINAL_FONT_PRESETS[number]['id']
 type TerminalFontSettings = { family: TerminalFontId; size: number }
-const DEFAULT_TERMINAL_FONT_SETTINGS: TerminalFontSettings = { family: 'sf-mono', size: 14 }
+const DEFAULT_TERMINAL_FONT_SETTINGS: TerminalFontSettings = { family: IS_WINDOWS ? 'cascadia-code' : 'sf-mono', size: 14 }
 type TerminalBehaviorSettings = {
   browser: BrowserPreference
   scrollSensitivity: number
@@ -120,7 +122,7 @@ const DEFAULT_LOCAL_PROFILE: ConnectionProfile = {
   id: LOCAL_PROFILE_ID,
   kind: 'local',
   name: 'Local terminal',
-  group: 'This Mac',
+  group: LOCAL_GROUP_LABELS[0],
   host: 'localhost',
   port: 0,
   username: '',
@@ -264,13 +266,37 @@ const TerminalView = forwardRef<TerminalHandle, {
       activate: (_event, uri) => openExternalLink(uri),
     }
     terminal.open(hostRef.current)
+    if (IS_WINDOWS) {
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey || event.isComposing) return true
+        const key = event.key.toLowerCase()
+        if (key === 'v') return false // Let Chromium deliver a native paste event.
+        if (key !== 'c' || !terminal.hasSelection()) return true
+        if (event.type === 'keydown') {
+          event.preventDefault()
+          document.execCommand('copy')
+          terminal.clearSelection()
+        }
+        return false
+      })
+    }
     terminalRef.current = terminal
     fitRef.current = fitAddon
 
     terminal.write(`\x1b[90m[Conexum] ${text('Starting terminal…', 'Iniciando terminal…')}\x1b[0m`)
 
     const inputDisposable = terminal.onData((data) => {
-      if (sessionIdRef.current) window.conexum?.ssh.write(sessionIdRef.current, data)
+      const id = sessionIdRef.current
+      if (!id) return
+      // The IPC validator accepts 64,000 UTF-16 units per message. Keep large
+      // bracketed pastes intact across writes, including supplementary characters.
+      for (let start = 0; start < data.length;) {
+        let end = Math.min(start + 64_000, data.length)
+        const last = data.charCodeAt(end - 1)
+        if (end < data.length && last >= 0xd800 && last <= 0xdbff) end--
+        window.conexum?.ssh.write(id, data.slice(start, end))
+        start = end
+      }
     })
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
       if (sessionIdRef.current) window.conexum?.ssh.resize(sessionIdRef.current, cols, rows)
@@ -392,7 +418,7 @@ const TerminalView = forwardRef<TerminalHandle, {
         terminal.writeln(`\x1b[90m[Conexum] ${text('Reopening', 'Reabriendo')} ${profile.kind === 'local' ? text('the local terminal', 'la terminal local') : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
       } else {
         terminal.reset()
-        terminal.writeln(`\x1b[90m[Conexum] ${text('Opening', 'Abriendo')} ${profile.kind === 'local' ? text('this Mac’s terminal', 'la terminal de esta Mac') : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
+        terminal.writeln(`\x1b[90m[Conexum] ${text('Opening', 'Abriendo')} ${profile.kind === 'local' ? text('the local terminal', 'la terminal local') : `${profile.username}@${profile.host}:${profile.port}`}…\x1b[0m`)
       }
       onStatusChange('connecting')
 
@@ -587,10 +613,10 @@ function ConnectionModal({ profile, mode, identityRequired, onClose, onSave }: {
           <label className="full-field"><span>{text('Identity file (optional)', 'Identity file (opcional)')}</span><div className="file-picker"><input value={identityFile} onChange={(e) => setIdentityFile(e.target.value)} placeholder="~/.ssh/id_ed25519" /><button type="button" onClick={chooseIdentityFile}><FolderOpen size={14} />{text('Choose…', 'Seleccionar…')}</button></div></label>
         </div>
         <div className="security-note">
-          <ShieldCheck size={18} /><div><strong>{text('Protected by OpenSSH and Keychain', 'Protegido por OpenSSH y Keychain')}</strong>
-          <span>{text('Conexum stores only the path. OpenSSH can remember the key passphrase through ssh-agent and macOS Keychain.', 'Conexum guarda solamente la ruta. OpenSSH puede recordar la passphrase de la clave mediante ssh-agent y el llavero de macOS.')}</span></div>
+          <ShieldCheck size={18} /><div><strong>{IS_WINDOWS ? 'OpenSSH' : text('Protected by OpenSSH and Keychain', 'Protegido por OpenSSH y Keychain')}</strong>
+          <span>{IS_WINDOWS ? text('Conexum saves the key path. You can unlock the key with the Windows OpenSSH agent.', 'Conexum guarda la ruta de la clave. Podés desbloquearla con el agente OpenSSH de Windows.') : text('Conexum stores only the path. OpenSSH can remember the key passphrase through ssh-agent and macOS Keychain.', 'Conexum guarda solamente la ruta. OpenSSH puede recordar la passphrase de la clave mediante ssh-agent y el llavero de macOS.')}</span></div>
         </div>
-        {editing && profile && identityFile && <div className="keychain-actions"><button type="button" onClick={forgetPassphrase}>{text('Forget saved passphrase', 'Olvidar passphrase guardada')}</button>{keychainMessage && <span>{keychainMessage}</span>}</div>}
+        {!IS_WINDOWS && editing && profile && identityFile && <div className="keychain-actions"><button type="button" onClick={forgetPassphrase}>{text('Forget saved passphrase', 'Olvidar passphrase guardada')}</button>{keychainMessage && <span>{keychainMessage}</span>}</div>}
         <div className="modal-actions">
           <button type="button" className="secondary-button" onClick={onClose}>{text('Cancel', 'Cancelar')}</button>
           <button type="submit" className="primary-button">{mode === 'edit' ? text('Save changes', 'Guardar cambios') : mode === 'duplicate' ? text('Save duplicate', 'Guardar duplicado') : text('Save connection', 'Guardar conexión')}</button>
@@ -644,7 +670,7 @@ export function App() {
   const [localProfile, setLocalProfile] = useState<ConnectionProfile>(() => ({
     ...DEFAULT_LOCAL_PROFILE,
     name: text('Local terminal', 'Terminal local'),
-    group: text('This Mac', 'Esta Mac'),
+    group: text(...LOCAL_GROUP_LABELS),
   }))
   const [localHomeDirectory, setLocalHomeDirectory] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(() => loadProfiles()[0]?.id ?? LOCAL_PROFILE_ID)
@@ -732,18 +758,18 @@ export function App() {
 
   useEffect(() => {
     const name = text('Local terminal', 'Terminal local')
-    const fallbackGroup = text('This Mac', 'Esta Mac')
+    const fallbackGroup = text(...LOCAL_GROUP_LABELS)
     setLocalProfile((current) => ({
       ...current,
       name,
-      group: current.group === 'This Mac' || current.group === 'Esta Mac' ? fallbackGroup : current.group,
+      group: LOCAL_GROUP_LABELS.includes(current.group) ? fallbackGroup : current.group,
     }))
     setSessions((current) => current.map((session) => session.profile.id === LOCAL_PROFILE_ID ? {
       ...session,
       profile: {
         ...session.profile,
         name,
-        group: session.profile.group === 'This Mac' || session.profile.group === 'Esta Mac' ? fallbackGroup : session.profile.group,
+        group: LOCAL_GROUP_LABELS.includes(session.profile.group) ? fallbackGroup : session.profile.group,
       },
     } : session))
   }, [language, text])
@@ -793,7 +819,7 @@ export function App() {
 
   useEffect(() => {
     const api = window.conexum
-    if (mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || activeSession.profile.kind === 'local' || !api) return
+    if (IS_WINDOWS || mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || activeSession.profile.kind === 'local' || !api) return
     let disposed = false
 
     const refreshTelemetry = async () => {
@@ -816,7 +842,7 @@ export function App() {
   }, [activeSessionId, activeSession?.status, mainView])
 
   useEffect(() => {
-    if (mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || activeSession.profile.kind !== 'local') return
+    if (IS_WINDOWS || mainView !== 'terminal' || !activeSessionId || activeSession?.status !== 'connected' || activeSession.profile.kind !== 'local') return
     const api = window.conexum?.local
     if (!api) return
     let disposed = false
@@ -988,7 +1014,7 @@ export function App() {
       id: sessionId,
       profile,
       status: 'connecting',
-      currentDirectory: profile.kind === 'local' ? localHomeDirectory || null : null,
+      currentDirectory: !IS_WINDOWS && profile.kind === 'local' ? localHomeDirectory || null : null,
       telemetry: null,
       telemetryStatus: 'idle',
       activity: { kind: 'idle', label: text('Terminal ready', 'Terminal lista'), updatedAt: Date.now() },
@@ -1251,6 +1277,36 @@ export function App() {
     }
   }
 
+  const importMRemoteNG = async () => {
+    setSettingsMessage(null)
+    try {
+      const result = await window.conexum?.profiles.importMRemoteNG()
+      if (!result) return
+      const ids = new Set(profiles.map((profile) => profile.id))
+      const additions = result.profiles.filter((profile) => {
+        if (ids.has(profile.id)) return false
+        ids.add(profile.id)
+        return true
+      })
+      if (additions.length) {
+        setProfiles((current) => {
+          const currentIds = new Set(current.map((profile) => profile.id))
+          return [...current, ...additions.filter((profile) => !currentIds.has(profile.id))]
+        })
+        setCollapsedGroups((current) => new Set([...current, ...additions.map((profile) => profile.group)]))
+      }
+      const duplicates = result.profiles.length - additions.length
+      const message = [text(`${additions.length} imported.`, `${additions.length} importadas.`)]
+      if (duplicates) message.push(text(`${duplicates} already present.`, `${duplicates} ya existentes.`))
+      if (result.unsupported) message.push(text(`${result.unsupported} use another protocol.`, `${result.unsupported} usan otro protocolo.`))
+      if (result.invalid) message.push(text(`${result.invalid} have invalid SSH fields.`, `${result.invalid} tienen datos SSH inválidos.`))
+      if (result.defaultedUsers) message.push(text('Entries with an empty username use your local username.', 'Las entradas sin usuario usan tu nombre de usuario local.'))
+      setSettingsMessage(message.join(' '))
+    } catch (error) {
+      setSettingsMessage(error instanceof Error ? localizeError(error.message.replace(/^Error invoking remote method '[^']+':\s*/, '')) : text('Could not import mRemoteNG connections.', 'No se pudieron importar las conexiones de mRemoteNG.'))
+    }
+  }
+
   const openDiagnostics = async () => {
     if (!activeSession || !window.conexum) return
     const result = await window.conexum.ssh.getDiagnostics(activeSession.id)
@@ -1394,7 +1450,7 @@ export function App() {
           <button className="group-title" aria-expanded={!localGroupCollapsed} onClick={() => setLocalGroupCollapsed((current) => !current)}>
             <ChevronDown size={13} className={`folder-chevron ${localGroupCollapsed ? 'collapsed' : ''}`} /><Monitor size={14} /><span>{localProfile.group}</span><small>1</small>
           </button>
-          {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title={text('Double-click to open a terminal on this Mac', 'Doble clic para abrir una terminal de esta Mac')}>
+          {!localGroupCollapsed && <button className={`connection-row ${selectedId === LOCAL_PROFILE_ID ? 'selected' : ''}`} onClick={() => setSelectedId(LOCAL_PROFILE_ID)} onDoubleClick={() => openSession(localProfile)} title={text('Double-click to open the local terminal', 'Doble clic para abrir la terminal local')}>
             <SquareTerminal size={15} className="server-icon" /><span className={`status-dot ${sessions.some((session) => session.profile.id === LOCAL_PROFILE_ID && session.status === 'connected') ? 'online' : ''}`} /><span>{localProfile.name}</span>
           </button>}
         </div>}
@@ -1426,7 +1482,7 @@ export function App() {
   const previewedSession = sessionPreview ? sessions.find((session) => session.id === sessionPreview.sessionId) ?? null : null
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-windows={IS_WINDOWS || undefined}>
       <header className="titlebar" style={themeId === '912' ? { '--river-banner-height': `${riverBannerHeight}px` } as CSSProperties : undefined}>
         {themeId === '912' && <><img className="theme-river-titlebar-photo" src={THEME_912_BANNER} alt="" aria-hidden="true" /><span className="theme-river-titlebar-overlay" aria-hidden="true" /></>}
         <button className={`brand ${mainView === 'home' ? 'active' : ''}`} onClick={showHome} aria-label={text('Home', 'Inicio')} title={text('Home', 'Inicio')}><img className="brand-logo" src={BRAND_ICON} alt="" /><span>Conexum</span></button>
@@ -1445,7 +1501,7 @@ export function App() {
                   onMouseEnter={(event) => scheduleSessionPreview(event, session.id)}
                   onMouseLeave={hideSessionPreview}
                 >
-                  <button className="session-tab-main" role="tab" aria-selected={active} onPointerDown={(event) => startTabPointerDrag(event, session.id)} onPointerMove={moveTabPointerDrag} onPointerUp={endTabPointerDrag} onPointerCancel={cancelTabPointerDrag} onClick={() => { if (suppressedTabClickRef.current === session.id) { suppressedTabClickRef.current = null; return }; activateSession(session) }} onDoubleClick={(event) => { event.stopPropagation(); hideSessionPreview(); closeSessionTab(session) }} title={`${session.profile.kind === 'local' ? text('This Mac’s terminal', 'Terminal de esta Mac') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
+                  <button className="session-tab-main" role="tab" aria-selected={active} onPointerDown={(event) => startTabPointerDrag(event, session.id)} onPointerMove={moveTabPointerDrag} onPointerUp={endTabPointerDrag} onPointerCancel={cancelTabPointerDrag} onClick={() => { if (suppressedTabClickRef.current === session.id) { suppressedTabClickRef.current = null; return }; activateSession(session) }} onDoubleClick={(event) => { event.stopPropagation(); hideSessionPreview(); closeSessionTab(session) }} title={`${session.profile.kind === 'local' ? text('Local terminal', 'Terminal local') : `${session.profile.username}@${session.profile.host}:${session.profile.port}`} · ${text('Double-click to close', 'Doble clic para cerrar')}`}>
                     {session.profile.kind === 'local' ? <Monitor size={14} /> : <SquareTerminal size={14} />}<span className="tab-title">{session.profile.name}</span>{sameProfileSessions.length > 1 && <small>#{ordinal}</small>}<i className={`terminal-activity ${session.activity.kind}`} title={session.activity.label} /><i className={`status-dot ${session.status === 'connected' ? 'online' : ''}`} />
                   </button>
                   {(session.status === 'disconnected' || session.status === 'error') && <button className="session-tab-reconnect" onClick={(event) => { event.stopPropagation(); hideSessionPreview(); reconnectSession(session) }} aria-label={text(`Reconnect ${session.profile.name}`, `Reconectar ${session.profile.name}`)} title={text('Reconnect session', 'Reconectar sesión')}>R</button>}
@@ -1480,8 +1536,8 @@ export function App() {
           />
           <ToolButton icon={splitMode === 2 ? <LayoutGrid size={16} /> : <Columns2 size={16} />} label={splitMode === 4 ? text('Single view', 'Vista única') : splitMode === 2 ? text('4-pane grid', 'Cuadrícula 4') : text('Split', 'Dividir')} disabled={sessions.length < 2} active={splitMode !== 0} onClick={cycleSplitMode} />
           <span className="toolbar-separator" aria-hidden="true" />
-          <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? text('SFTP is only available for SSH sessions', 'SFTP sólo para sesiones SSH') : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />
-          <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? text('The remote editor is only available for SSH sessions', 'Editor remoto sólo para sesiones SSH') : text('Editor', 'Editor')} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />
+          {!IS_WINDOWS && <ToolButton icon={<FolderOpen size={16} />} label={activeSession?.profile.kind === 'local' ? text('SFTP is only available for SSH sessions', 'SFTP sólo para sesiones SSH') : 'SFTP'} active={activeTool === 'sftp'} disabled={!activeSession || activeSession.status !== 'connected' || activeSession.profile.kind === 'local'} onClick={requestSftp} />}
+          {!IS_WINDOWS && <ToolButton icon={<FileCode2 size={16} />} label={activeSession?.profile.kind === 'local' ? text('The remote editor is only available for SSH sessions', 'Editor remoto sólo para sesiones SSH') : text('Editor', 'Editor')} active={activeTool === 'editor'} disabled={!activeSession || activeSession.profile.kind === 'local' || (activeSession.status !== 'connected' && !editorPanels.some((panel) => panel.sessionId === activeSession.id))} onClick={requestEditor} />}
           <div className="settings-wrapper">
             <button className="icon-button" aria-label={text('Settings', 'Ajustes')} title={text('Settings', 'Ajustes')} aria-expanded={settingsOpen} onClick={() => { setSettingsOpen((current) => !current); setSettingsMessage(null) }}><Settings2 size={17} /></button>
             {settingsOpen && <div className="settings-menu">
@@ -1499,10 +1555,11 @@ export function App() {
               <label className="settings-terminal"><SquareTerminal size={14} /><span><strong>{text('Scroll speed', 'Velocidad de scroll')}</strong><small>{text('Trackpad and mouse wheel', 'Trackpad y rueda del mouse')}</small></span><select value={terminalBehaviorSettings.scrollSensitivity} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, scrollSensitivity: Number(event.target.value) }))}><option value={0.5}>{text('Precise', 'Precisa')}</option><option value={1}>{text('Normal', 'Normal')}</option><option value={2}>{text('Fast', 'Rápida')}</option><option value={3}>{text('Very fast', 'Muy rápida')}</option></select></label>
               <label className="settings-terminal"><span className="settings-type-spacer" aria-hidden="true" /><span><strong>{text('Smooth scroll', 'Scroll suave')}</strong><small>{text('Animation duration', 'Duración de la animación')}</small></span><select value={terminalBehaviorSettings.smoothScrollDuration} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, smoothScrollDuration: Number(event.target.value) }))}><option value={0}>{text('Off', 'Desactivado')}</option><option value={80}>{text('Balanced', 'Equilibrado')}</option><option value={150}>{text('Soft', 'Suave')}</option></select></label>
               <label className="settings-notification"><Bell size={14} /><span><strong>{text('Desktop notifications', 'Notificaciones del escritorio')}</strong><small>{text('When the terminal requests attention', 'Cuando la terminal solicita atención')}</small></span><input type="checkbox" checked={terminalBehaviorSettings.desktopNotifications} onChange={(event) => setTerminalBehaviorSettings((current) => ({ ...current, desktopNotifications: event.target.checked }))} /></label>
-              <p className="settings-codex-note">{text('Codex tip: use /tui → scrollback or start with codex --no-alt-screen. Press Alt-R or /raw for copy-friendly output.', 'Consejo Codex: usá /tui → scrollback o iniciá con codex --no-alt-screen. Presioná Alt-R o /raw para copiar mejor.')}</p>
+              <p className="settings-codex-note">{IS_WINDOWS ? text('Terminal shortcuts: Ctrl+Shift+C to copy, Ctrl+Shift+V to paste. Hold Shift while dragging to select text inside a full-screen app.', 'Atajos de terminal: Ctrl+Shift+C para copiar, Ctrl+Shift+V para pegar. Mantené Shift mientras arrastrás para seleccionar texto en una aplicación de pantalla completa.') : text('Codex tip: use /tui → scrollback or start with codex --no-alt-screen. Press Alt-R or /raw for copy-friendly output.', 'Consejo Codex: usá /tui → scrollback o iniciá con codex --no-alt-screen. Presioná Alt-R o /raw para copiar mejor.')}</p>
               <i />
               <button onClick={() => void exportBackup()}><FileDown size={14} /><span><strong>{text('Export connections', 'Exportar conexiones')}</strong><small>{text('No secrets or private keys', 'Sin secretos ni claves privadas')}</small></span></button>
               <button onClick={() => void importBackup()}><FileUp size={14} /><span><strong>{text('Import connections', 'Importar conexiones')}</strong><small>{text('From a Conexum backup', 'Desde un respaldo de Conexum')}</small></span></button>
+              <button onClick={() => void importMRemoteNG()}><Import size={14} /><span><strong>{text('Import from mRemoteNG', 'Importar desde mRemoteNG')}</strong><small>{text('SSH profiles from an XML export', 'Perfiles SSH desde un archivo XML')}</small></span></button>
               <i />
               <button disabled={!activeSession || activeSession.profile.kind === 'local'} onClick={() => void openDiagnostics()}><Stethoscope size={14} /><span><strong>{text('SSH diagnostics', 'Diagnóstico SSH')}</strong><small>{activeSession?.profile.kind === 'local' ? text('Not available for the local terminal', 'No aplica a la terminal local') : activeSession ? activeSession.profile.name : text('Open a session first', 'Abrí una sesión primero')}</small></span></button>
               {settingsMessage && <p>{settingsMessage}</p>}
@@ -1588,12 +1645,12 @@ export function App() {
                   ? <button className="session-directory unavailable directory-help-trigger" title={text('Enable remote directory tracking (optional)', 'Activar seguimiento de la carpeta remota (opcional)')} onClick={() => setDirectoryHelp(activeSession.id)}>{text('Path —', 'Ruta —')}</button>
                   : <span className={`session-directory ${activeDirectory ? '' : 'unavailable'}`} title={activeSession.currentDirectory ?? text('Local directory unavailable', 'Directorio local no disponible')}>{activeDirectory ?? text('Path —', 'Ruta —')}</span>
               )}
-              <button className={`status-git-button ${gitPanelOpen ? 'active' : ''}`} disabled={mainView !== 'terminal' || activeSession?.status !== 'connected'} onClick={() => setGitPanelOpen((current) => !current)} title={text('Show changed files and Git diff summary', 'Mostrar archivos modificados y resumen de Git diff')}><GitBranch size={12} />Git</button>
+              {!IS_WINDOWS && <button className={`status-git-button ${gitPanelOpen ? 'active' : ''}`} disabled={mainView !== 'terminal' || activeSession?.status !== 'connected'} onClick={() => setGitPanelOpen((current) => !current)} title={text('Show changed files and Git diff summary', 'Mostrar archivos modificados y resumen de Git diff')}><GitBranch size={12} />Git</button>}
             </div>
             <div className={`status-right ${telemetryStale ? 'stale' : ''}`}>
               {themeId === '912' && <img className="theme-912-emblem" src={THEME_912_EMBLEM} alt="" aria-hidden="true" />}
               {mainView === 'terminal' && activeSession && <span className={`status-activity ${activeSession.activity.kind}`} title={activeSession.activity.label}><i />{activeSession.activity.label}</span>}
-              {mainView === 'terminal' && activeSession?.status === 'connected' && activeSession.profile.kind !== 'local' && (
+              {!IS_WINDOWS && mainView === 'terminal' && activeSession?.status === 'connected' && activeSession.profile.kind !== 'local' && (
                 <>
                   <span title={text('Approximate server CPU usage', 'Uso aproximado de CPU del servidor')}>CPU {activeSession.telemetry?.cpuPercent ?? '—'}{activeSession.telemetry?.cpuPercent !== null && activeSession.telemetry?.cpuPercent !== undefined ? '%' : ''}</span>
                   <span title={text('Approximate server memory usage', 'Uso aproximado de memoria del servidor')}>RAM {activeSession.telemetry?.memoryPercent ?? '—'}{activeSession.telemetry ? '%' : ''}</span>

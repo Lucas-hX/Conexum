@@ -97,6 +97,7 @@ declare global {
   interface Window {
     conexum?: {
       platform: 'desktop'
+      isWindows: boolean
       ssh: {
         connect(request: SshConnectRequest): Promise<{ sessionId: string; pid: number }>
         write(sessionId: string, data: string): void
@@ -127,6 +128,7 @@ declare global {
         importSshConfig(): Promise<ConnectionProfile[]>
         exportBackup(profiles: ConnectionProfile[]): Promise<string | null>
         importBackup(): Promise<ConnectionProfile[]>
+        importMRemoteNG(): Promise<{ profiles: ConnectionProfile[]; unsupported: number; invalid: number; defaultedUsers: number } | null>
         forgetIdentityPassphrase(filePath: string): Promise<boolean>
       }
       sftp: {

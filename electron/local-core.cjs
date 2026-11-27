@@ -17,10 +17,20 @@ function validateLocalConnection(request) {
   }
 }
 
-function machineInfo(hostname, username, homeDirectory) {
+function localShell(platform = process.platform, windowsRoot = process.env.SystemRoot) {
+  if (platform === 'win32') {
+    return {
+      executable: path.win32.join(windowsRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+      args: ['-NoLogo'],
+    }
+  }
+  return { executable: '/bin/zsh', args: ['-l', '-i'] }
+}
+
+function machineInfo(hostname, username, homeDirectory, platform = process.platform) {
   const shortName = String(hostname || '').split('.')[0]
   return {
-    name: shortName && shortName.length <= 80 && !/[\r\n\0]/.test(shortName) ? shortName : 'Esta Mac',
+    name: shortName && shortName.length <= 80 && !/[\r\n\0]/.test(shortName) ? shortName : (platform === 'win32' ? 'Windows' : 'Esta Mac'),
     username: typeof username === 'string' && username.length <= 80 && !/[\r\n\0]/.test(username) ? username : '',
     homeDirectory: typeof homeDirectory === 'string' && path.isAbsolute(homeDirectory) ? homeDirectory : '/',
   }
@@ -32,4 +42,4 @@ function parseLsofCwd(output) {
   return match && match[1].length <= 4_096 ? match[1] : null
 }
 
-module.exports = { LOCAL_PROFILE_ID, machineInfo, parseLsofCwd, validateLocalConnection }
+module.exports = { LOCAL_PROFILE_ID, localShell, machineInfo, parseLsofCwd, validateLocalConnection }

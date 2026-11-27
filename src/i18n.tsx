@@ -49,6 +49,10 @@ const spanishErrors: Record<string, string> = {
   'The content is invalid or exceeds the 2 MB limit.': 'El contenido no es válido o supera el límite de 2 MB.',
   'Could not verify the original file version.': 'No se pudo verificar la versión original del archivo.',
   'The backup is too large or is not a valid file.': 'El respaldo es demasiado grande o no es un archivo válido.',
+  'The mRemoteNG XML must be a file of 32 MB or less.': 'El archivo XML de mRemoteNG debe tener un tamaño de hasta 32 MB.',
+  'Choose a valid mRemoteNG connections XML file.': 'Elegí un archivo XML válido de conexiones de mRemoteNG.',
+  'This mRemoteNG file is encrypted. Export the connections as XML from mRemoteNG with Password unchecked.': 'Este archivo de mRemoteNG está cifrado. Exportá las conexiones como XML desde mRemoteNG con la casilla Password desmarcada.',
+  'The file contains too many SSH connections.': 'El archivo contiene demasiadas conexiones SSH.',
   'Invalid transfer.': 'Transferencia inválida.',
   'This transfer can no longer be retried.': 'Esta transferencia ya no se puede reintentar.',
 }

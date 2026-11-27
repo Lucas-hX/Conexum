@@ -4,7 +4,18 @@ const assert = require('node:assert/strict')
 const {
   MAX_OSC52_CLIPBOARD_BYTES,
   decodeOsc52Clipboard,
+  windowsClipboardCommand,
 } = require('../electron/clipboard-core.cjs')
+
+test('Windows native shortcuts leave Ctrl+C interrupts and AltGr input to xterm', () => {
+  const gesture = { type: 'keyDown', shift: true, control: true }
+  assert.equal(windowsClipboardCommand({ ...gesture, key: 'C' }), 'copy')
+  assert.equal(windowsClipboardCommand({ ...gesture, key: 'V' }), 'paste')
+  assert.equal(windowsClipboardCommand({ ...gesture, key: 'Insert', control: false }), 'paste')
+  for (const extra of [{ shift: false }, { alt: true }, { isComposing: true }, { type: 'keyUp' }]) {
+    assert.equal(windowsClipboardCommand({ ...gesture, key: 'c', ...extra }), null)
+  }
+})
 
 test('decodes OSC 52 clipboard writes with Unicode text', () => {
   const text = 'Copied from Codex\nconst greeting = "¡Hola! 👋"\n'

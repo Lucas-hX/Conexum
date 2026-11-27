@@ -15,6 +15,7 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 
 - Perfiles SSH persistentes y organizados en carpetas.
 - Importación de archivos SSH config.
+- Importación de perfiles SSH desde XML de mRemoteNG con grupos, puertos y usuarios heredados.
 - Edición contextual de perfiles e IdentityFile.
 - OpenSSH real mediante una pseudo-terminal.
 - Sesiones simultáneas e independientes en pestañas.
@@ -42,6 +43,15 @@ Este documento transforma la visión del producto en entregas concretas. Tambié
 - Duplicación contextual de perfiles SSH para reutilizar rápidamente un servidor con otro usuario o configuración.
 - SFTP y Editor abiertos en la última ruta informada por la pestaña cuando OSC 7 está disponible; si no, comienzan directamente en el home remoto y permiten cambiar de ruta manualmente.
 - Copia al portapapeles local mediante OSC 52 para herramientas de terminal a pantalla completa, limitada a escritura validada desde terminales visibles y enfocadas.
+
+## Versión preliminar para Windows x64
+
+- Windows 10 y 11 con la característica **Cliente OpenSSH**. El paquete ZIP se genera con `pnpm run package:win` e incluye el módulo nativo de `node-pty` para Windows.
+- Terminal local con Windows PowerShell y pestañas SSH independientes mediante OpenSSH y ConPTY.
+- Selección local con **Shift + arrastrar**, copia con **Ctrl+Shift+C** y pegado con **Ctrl+Shift+V** o **Shift+Insert** en interfaces como OpenCode.
+- Migración desde **Ajustes → Importar desde mRemoteNG**. La autenticación se realiza con una clave OpenSSH, el agente de Windows o la contraseña que se ingresa en la terminal.
+
+El explorador SFTP, el editor remoto, el panel Git, las métricas de CPU/RAM y el seguimiento de directorio local siguen disponibles en macOS. Incorporarlos en Windows requiere resolver el acceso auxiliar a las sesiones SSH y al directorio de PowerShell.
 
 ## Entrega 0.2 — Identidad macOS y base para colaboradores
 

@@ -5,8 +5,12 @@ const fs = require('node:fs')
 const crypto = require('node:crypto')
 const { execFile, execFileSync, spawn } = require('node:child_process')
 const { promisify } = require('node:util')
-const pty = require('node-pty')
+// The Windows ConPTY worker and forked helper need real paths outside the ASAR.
+const pty = process.platform === 'win32' && app.isPackaged
+  ? require(path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-pty'))
+  : require('node-pty')
 const {
+  INTERACTIVE_PTY_OPTIONS,
   SessionRegistry,
   buildControlCommandSshArgs,
   buildTelemetrySshArgs,
@@ -14,6 +18,7 @@ const {
   calculateTelemetry,
   expandHome,
   isValidSessionId,
+  openSshExecutable,
   processEnvForSsh,
   parseTelemetrySample,
   readHostAliases,
@@ -37,8 +42,9 @@ const {
   validateRemotePath,
 } = require('./sftp-core.cjs')
 const { createBackup, parseBackup } = require('./profile-core.cjs')
-const { machineInfo, parseLsofCwd, validateLocalConnection } = require('./local-core.cjs')
-const { decodeOsc52Clipboard } = require('./clipboard-core.cjs')
+const { parseMRemoteConnections, MAX_MREMOTE_BYTES, SIZE_ERROR: MREMOTE_SIZE_ERROR } = require('./mremoteng-core.cjs')
+const { localShell, machineInfo, parseLsofCwd, validateLocalConnection } = require('./local-core.cjs')
+const { decodeOsc52Clipboard, windowsClipboardCommand } = require('./clipboard-core.cjs')
 const { chromeLaunchCandidates, validateBrowserPreference, validateExternalUrl } = require('./external-core.cjs')
 const { buildRemoteGitCommand, parsePorcelainStatus, parseShortStat, validateGitDirectory } = require('./git-core.cjs')
 
@@ -59,11 +65,11 @@ const notificationRateLimits = new Map()
 const appIconPath = path.join(__dirname, '..', 'public', 'brand', 'conexum-icon.png')
 // `/tmp` intentionally keeps the Unix socket path short. macOS exposes a much
 // longer per-user temp path and OpenSSH adds a temporary suffix while binding.
-const controlDirectory = fs.mkdtempSync(path.join('/tmp', 'cx-'))
+const controlDirectory = process.platform === 'win32' ? null : fs.mkdtempSync(path.join('/tmp', 'cx-'))
 const execFileAsync = promisify(execFile)
 const MAX_EDITOR_FILE_BYTES = 2 * 1_024 * 1_024
 
-fs.chmodSync(controlDirectory, 0o700)
+if (controlDirectory) fs.chmodSync(controlDirectory, 0o700)
 
 function sendToRenderer(sender, channel, payload) {
   if (!sender.isDestroyed()) sender.send(channel, payload)
@@ -130,7 +136,7 @@ async function localGitSummary(sessionId) {
 async function runRemoteGit(context, directory, operation, maxBuffer = 2_000_000) {
   const command = buildRemoteGitCommand(directory, operation)
   const args = buildControlCommandSshArgs(context.connection, context.controlPath, command)
-  const { stdout } = await execFileAsync(executableFor('ssh'), args, {
+  const { stdout } = await execFileAsync(openSshExecutable('ssh'), args, {
     encoding: 'utf8',
     timeout: 6_000,
     maxBuffer,
@@ -202,6 +208,7 @@ function sessionContext(sessionId) {
   if (!isValidSessionId(sessionId)) throw new Error('Invalid session identifier.')
   const context = sessionConnections.get(sessionId)
   if (!context || !sessions.has(sessionId)) throw new Error('The SSH session is no longer active.')
+  if (!context.controlPath) throw new Error('This tool requires SSH connection sharing, which is unavailable in the Windows preview.')
   return context
 }
 
@@ -467,7 +474,7 @@ function connectionCacheKey(connection) {
 }
 
 function controlPathForConnection(cacheKey) {
-  return path.join(controlDirectory, cacheKey.slice(0, 16))
+  return controlDirectory ? path.join(controlDirectory, cacheKey.slice(0, 16)) : null
 }
 
 async function collectTelemetry(context) {
@@ -508,10 +515,12 @@ async function collectTelemetry(context) {
 }
 
 function resolveSshAlias(alias, configFile) {
-  const output = execFileSync('/usr/bin/ssh', ['-G', '-F', configFile, alias], {
+  const output = execFileSync(openSshExecutable('ssh'), ['-G', '-F', configFile, '--', alias], {
     encoding: 'utf8',
     timeout: 5_000,
     maxBuffer: 2_000_000,
+    windowsHide: true,
+    env: processEnvForSsh(),
   })
   const values = new Map()
   const identityFiles = []
@@ -523,7 +532,7 @@ function resolveSshAlias(alias, configFile) {
     if (key === 'identityfile') identityFiles.push(value)
     if (!values.has(key)) values.set(key, value)
   }
-  const identityFile = identityFiles.map(expandHome).find((candidate) => fs.existsSync(candidate)) || ''
+  const identityFile = identityFiles.map((file) => expandHome(file)).find((candidate) => fs.existsSync(candidate)) || ''
   const host = values.get('hostname') || alias
   const username = values.get('user') || os.userInfo().username
   return {
@@ -598,13 +607,33 @@ function registerProfileHandlers() {
     return parseBackup(fs.readFileSync(source, 'utf8'))
   })
 
+  ipcMain.handle('profiles:import-mremoteng', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(parent ?? undefined, {
+      title: 'Import SSH connections from mRemoteNG',
+      filters: [{ name: 'mRemoteNG XML', extensions: ['xml'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const handle = await fs.promises.open(result.filePaths[0], 'r')
+    try {
+      const stats = await handle.stat()
+      if (!stats.isFile() || stats.size > MAX_MREMOTE_BYTES) throw new Error(MREMOTE_SIZE_ERROR)
+      return parseMRemoteConnections(await handle.readFile(), os.userInfo().username)
+    } finally {
+      await handle.close()
+    }
+  })
+
   ipcMain.handle('profiles:forget-identity', (_event, filePath) => {
     const identityFile = validateFilePath(String(filePath || ''), 'The identity file')
-    execFileSync('/usr/bin/ssh-add', ['--apple-use-keychain', '-d', identityFile], {
+    const args = process.platform === 'darwin' ? ['--apple-use-keychain', '-d', identityFile] : ['-d', identityFile]
+    execFileSync(openSshExecutable('ssh-add'), args, {
       encoding: 'utf8',
       timeout: 10_000,
       maxBuffer: 1_000_000,
       env: processEnvForSsh(),
+      windowsHide: true,
     })
     return true
   })
@@ -773,8 +802,9 @@ function registerSshHandlers() {
       const local = validateLocalConnection(request)
       if (sessions.has(local.sessionId)) throw new Error('The session already exists.')
       const sender = event.sender
-      const shellProcess = pty.spawn('/bin/zsh', ['-l', '-i'], {
-        name: 'xterm-256color',
+      const localCommand = localShell()
+      const shellProcess = pty.spawn(localCommand.executable, localCommand.args, {
+        ...INTERACTIVE_PTY_OPTIONS,
         cols: local.cols,
         rows: local.rows,
         cwd: os.homedir(),
@@ -801,8 +831,12 @@ function registerSshHandlers() {
     const controlPath = controlPathForConnection(cacheKey)
     const args = buildSshArgs(connection, { controlPath })
 
-    const sshProcess = pty.spawn('/usr/bin/ssh', args, {
-      name: 'xterm-256color',
+    const sshExecutable = openSshExecutable('ssh')
+    if (process.platform === 'win32' && !fs.existsSync(sshExecutable)) {
+      throw new Error('OpenSSH Client is missing. Install it in Windows Settings → Optional features, then reconnect.')
+    }
+    const sshProcess = pty.spawn(sshExecutable, args, {
+      ...INTERACTIVE_PTY_OPTIONS,
       cols: connection.cols,
       rows: connection.rows,
       cwd: os.homedir(),
@@ -888,7 +922,7 @@ function registerSshHandlers() {
   ipcMain.handle('ssh:telemetry', async (_event, { sessionId } = {}) => {
     if (!isValidSessionId(sessionId)) return null
     const context = sessionConnections.get(sessionId)
-    if (!context || !sessions.has(sessionId)) return null
+    if (!context?.controlPath || !sessions.has(sessionId)) return null
     return collectTelemetry(context)
   })
 
@@ -998,6 +1032,10 @@ function closeAllSessions() {
 }
 
 function installApplicationMenu() {
+  if (process.platform === 'win32') {
+    Menu.setApplicationMenu(null)
+    return
+  }
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { role: 'appMenu' },
     { role: 'editMenu' },
@@ -1015,8 +1053,10 @@ function createWindow() {
     minWidth: 960,
     minHeight: 620,
     title: 'Conexum',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
+    ...(process.platform === 'darwin' && {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 18, y: 18 },
+    }),
     backgroundColor: '#0b1016',
     icon: appIconPath,
     webPreferences: {
@@ -1027,6 +1067,17 @@ function createWindow() {
     },
   })
   mainWindowWebContentsId = window.webContents.id
+
+  if (process.platform === 'win32') {
+    // Native editing commands dispatch a clipboard event to the focused control.
+    // The renderer never needs a general clipboard-read IPC capability.
+    window.webContents.on('before-input-event', (event, input) => {
+      const command = windowsClipboardCommand(input)
+      if (!command) return
+      event.preventDefault()
+      window.webContents[command]()
+    })
+  }
 
   let allowClose = false
   let closeDialogOpen = false
@@ -1092,6 +1143,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  if (!controlDirectory) return
   try {
     fs.rmSync(controlDirectory, { recursive: true, force: true })
   } catch {

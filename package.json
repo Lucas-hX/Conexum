@@ -3,7 +3,7 @@
   "productName": "Conexum",
   "private": true,
   "version": "0.6.6",
-  "description": "A simple, terminal-first SSH connection manager for macOS",
+  "description": "A terminal-first SSH connection manager for macOS and Windows",
   "author": "Lucas-hX",
   "homepage": "https://github.com/Lucas-hX/Conexum",
   "repository": {
@@ -21,6 +21,7 @@
     "desktop": "tsc -b && vite build && electron .",
     "rebuild:native": "electron-rebuild -f -w node-pty",
     "package:mac": "pnpm run build && electron-builder --mac dir",
+    "package:win": "pnpm run build && electron-builder --win zip --x64 -c.npmRebuild=false --publish never",
     "update:local": "./scripts/update-conexum.command"
   },
   "dependencies": {
@@ -32,7 +33,8 @@
     "monaco-editor": "^0.56.0",
     "node-pty": "^1.1.0",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "sax": "^1.6.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
@@ -62,6 +64,10 @@
       "public/brand/**/*",
       "package.json"
     ],
+    "win": {
+      "icon": "public/brand/conexum-icon.png",
+      "artifactName": "Conexum-Windows-${version}-${arch}.${ext}"
+    },
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "public/brand/conexum-icon.png",

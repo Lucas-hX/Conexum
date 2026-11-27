@@ -69,6 +69,11 @@ button {
   -webkit-app-region: no-drag;
 }
 
+.app-shell[data-windows] .titlebar {
+  padding-left: 12px;
+  -webkit-app-region: no-drag;
+}
+
 .brand:hover, .brand.active { color: #f2f7fb; background: #ffffff0b; }
 .brand.active { box-shadow: inset 0 0 0 1px #367aa544; }
 .brand:focus-visible, .header-sidebar-toggle:focus-visible, .session-tab button:focus-visible, .tabs-overflow-trigger:focus-visible { outline: 2px solid #55aef0; outline-offset: 1px; }

@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  node-pty@1.1.0: 31de7a96d3954d7ddb1fff1c271917d8ac4341ea03e3d8ec447034d8e6d78a02
+
 importers:
 
   .:
@@ -28,13 +31,16 @@ importers:
         version: 0.56.0
       node-pty:
         specifier: ^1.1.0
-        version: 1.1.0
+        version: 1.1.0(patch_hash=31de7a96d3954d7ddb1fff1c271917d8ac4341ea03e3d8ec447034d8e6d78a02)
       react:
         specifier: ^19.3.0
         version: 19.3.0
       react-dom:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
+      sax:
+        specifier: ^1.6.1
+        version: 1.6.1
     devDependencies:
       '@electron/rebuild':
         specifier: ^4.2.0
@@ -2624,7 +2630,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.1.0:
+  node-pty@1.1.0(patch_hash=31de7a96d3954d7ddb1fff1c271917d8ac4341ea03e3d8ec447034d8e6d78a02):
     dependencies:
       node-addon-api: 7.1.1
 

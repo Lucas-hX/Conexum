@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 contextBridge.exposeInMainWorld('conexum', {
   platform: 'desktop',
+  isWindows: process.platform === 'win32',
   ssh: {
     connect: (request) => ipcRenderer.invoke('ssh:connect', request),
     write: (sessionId, data) => ipcRenderer.send('ssh:input', { sessionId, data }),
@@ -40,6 +41,7 @@ contextBridge.exposeInMainWorld('conexum', {
     importSshConfig: () => ipcRenderer.invoke('profiles:import-config'),
     exportBackup: (profiles) => ipcRenderer.invoke('profiles:export-backup', profiles),
     importBackup: () => ipcRenderer.invoke('profiles:import-backup'),
+    importMRemoteNG: () => ipcRenderer.invoke('profiles:import-mremoteng'),
     forgetIdentityPassphrase: (filePath) => ipcRenderer.invoke('profiles:forget-identity', filePath),
   },
   sftp: {
